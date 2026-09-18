@@ -7,10 +7,11 @@ decision rule evaluation, and observation logging.
 import logging
 import json
 from typing import Optional, Dict, Any, List, Tuple
+import time
 from datetime import datetime
 import numpy as np
 
-from backend.config import IDENTITY_HIGH_THRESHOLD, IDENTITY_LOW_THRESHOLD
+from backend.config import IDENTITY_HIGH_THRESHOLD, IDENTITY_LOW_THRESHOLD, IDENTITY_EVENT_COOLDOWN_SECONDS
 from backend.vehicle_identity.feature_extractor import VehicleFeatureExtractor
 from backend.vehicle_identity.similarity import cosine_similarity
 from backend.vehicle_identity.identity_rules import evaluate_identity_decision
@@ -40,6 +41,8 @@ class VehicleIdentityService:
         self.feature_extractor = feature_extractor or VehicleFeatureExtractor()
         # In-memory cache of VehicleIdentity records for fast cosine comparisons
         self._identities: List[VehicleIdentity] = []
+        # Cooldown map: (vehicle_id, plate, event_type) -> float (last alert epoch timestamp)
+        self._last_event_timestamps: Dict[Tuple[str, Optional[str], str], float] = {}
         self._refresh_cache()
 
     def _refresh_cache(self):
@@ -48,6 +51,10 @@ class VehicleIdentityService:
         except Exception as e:
             logger.error(f"Failed to refresh vehicle identities cache: {e}")
             self._identities = []
+
+    def clear_cooldown(self):
+        """Resets the deduplication cooldown state."""
+        self._last_event_timestamps.clear()
 
     def process_vehicle(
         self,
@@ -62,7 +69,9 @@ class VehicleIdentityService:
         timestamp: Optional[str] = None,
         vehicle_crop_path: Optional[str] = None,
         plate_crop_path: Optional[str] = None,
-        frame_path: Optional[str] = None
+        frame_path: Optional[str] = None,
+        previous_crop_path: Optional[str] = None,
+        is_demo: bool = False
     ) -> IdentityMatchResult:
         """
         Processes a vehicle crop against known identities:
@@ -128,17 +137,20 @@ class VehicleIdentityService:
 
         # 5. Persist / Update Identity
         assigned_vehicle_id: str = ""
-        prev_crop_path: Optional[str] = None
+        prev_crop_path: Optional[str] = previous_crop_path
 
         if event_type in [IdentityEventType.SAME_VEHICLE, IdentityEventType.PLATE_UNREADABLE_VEHICLE_MATCH]:
             # Associate with existing candidate
             assigned_vehicle_id = active_candidate.vehicle_id
             new_visit_count = active_candidate.visit_count + 1
             
-            # Fetch previous observation crop for evidence comparison
-            prev_obs = get_identity_observations_for_vehicle(assigned_vehicle_id)
-            if prev_obs:
-                prev_crop_path = prev_obs[0].vehicle_crop_path
+            # Fetch previous observation crop for evidence comparison if not explicitly provided
+            if not prev_crop_path:
+                prev_obs = get_identity_observations_for_vehicle(assigned_vehicle_id)
+                for o in prev_obs:
+                    if o.vehicle_crop_path:
+                        prev_crop_path = o.vehicle_crop_path
+                        break
 
             # Update identity record
             update_vehicle_identity(
@@ -160,10 +172,12 @@ class VehicleIdentityService:
             new_vid = get_next_vehicle_id()
             assigned_vehicle_id = new_vid
             
-            if active_candidate and event_type in [IdentityEventType.POSSIBLE_IDENTITY_MISMATCH, IdentityEventType.POSSIBLE_PLATE_SWAP]:
+            if not prev_crop_path and active_candidate and event_type in [IdentityEventType.POSSIBLE_IDENTITY_MISMATCH, IdentityEventType.POSSIBLE_PLATE_SWAP]:
                 prev_obs = get_identity_observations_for_vehicle(active_candidate.vehicle_id)
-                if prev_obs:
-                    prev_crop_path = prev_obs[0].vehicle_crop_path
+                for o in prev_obs:
+                    if o.vehicle_crop_path:
+                        prev_crop_path = o.vehicle_crop_path
+                        break
 
             new_identity = VehicleIdentity(
                 vehicle_id=new_vid,
@@ -173,30 +187,45 @@ class VehicleIdentityService:
                 visit_count=1,
                 vehicle_class=vehicle_class,
                 embedding=embedding,
+                is_demo=is_demo,
                 created_at=now_iso,
                 updated_at=now_iso
             )
-            insert_vehicle_identity(new_identity)
+            insert_vehicle_identity(new_identity, is_demo=is_demo)
             self._identities.append(new_identity)
 
-        # 6. Record observation in database
-        obs = IdentityObservation(
-            vehicle_identity_id=assigned_vehicle_id,
-            observed_plate=clean_plate,
-            plate_confidence=plate_confidence,
-            ocr_confidence=ocr_confidence,
-            visual_similarity=round(eval_sim, 3),
-            event_type=event_type,
-            camera_id=camera_id,
-            zone=zone,
-            timestamp=now_iso,
-            frame_number=frame_number,
-            vehicle_crop_path=vehicle_crop_path,
-            plate_crop_path=plate_crop_path,
-            frame_path=frame_path,
-            previous_crop_path=prev_crop_path
-        )
-        insert_identity_observation(obs)
+        # 6. Temporal Deduplication check (cooldown suppression for duplicate identity alerts)
+        now_epoch = time.time()
+        dedup_key = (assigned_vehicle_id, clean_plate)
+        last_epoch = self._last_event_timestamps.get(dedup_key, 0.0)
+        is_duplicate = False
+
+        if (now_epoch - last_epoch) < IDENTITY_EVENT_COOLDOWN_SECONDS:
+            is_duplicate = True
+            logger.info(f"Duplicate identity event suppressed for {dedup_key} within {IDENTITY_EVENT_COOLDOWN_SECONDS}s cooldown.")
+        else:
+            self._last_event_timestamps[dedup_key] = now_epoch
+
+        # Record observation in database only if not suppressed by temporal cooldown
+        if not is_duplicate:
+            obs = IdentityObservation(
+                vehicle_identity_id=assigned_vehicle_id,
+                observed_plate=clean_plate,
+                plate_confidence=plate_confidence,
+                ocr_confidence=ocr_confidence,
+                visual_similarity=round(eval_sim, 3),
+                event_type=event_type,
+                camera_id=camera_id,
+                zone=zone,
+                timestamp=now_iso,
+                frame_number=frame_number,
+                vehicle_crop_path=vehicle_crop_path,
+                plate_crop_path=plate_crop_path,
+                frame_path=frame_path,
+                previous_crop_path=prev_crop_path,
+                is_demo=is_demo
+            )
+            insert_identity_observation(obs, is_demo=is_demo)
 
         is_matched = (event_type in [IdentityEventType.SAME_VEHICLE, IdentityEventType.PLATE_UNREADABLE_VEHICLE_MATCH])
 
@@ -207,5 +236,6 @@ class VehicleIdentityService:
             event_type=event_type,
             previous_crop_path=prev_crop_path,
             canonical_plate=clean_plate,
-            details=details
+            details=details if not is_duplicate else f"{details} (Duplicate observation suppressed)",
+            is_duplicate=is_duplicate
         )

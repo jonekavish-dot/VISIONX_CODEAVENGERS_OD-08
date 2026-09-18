@@ -14,17 +14,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DEMO_DIR = DATA_DIR / "demo"
 EVIDENCE_DIR = DATA_DIR / "evidence"
+SCENARIOS_DIR = DEMO_DIR / "scenarios"
 DB_PATH = BASE_DIR / "vtrace.db"
 
 # Ensure runtime directories exist
 DEMO_DIR.mkdir(parents=True, exist_ok=True)
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+SCENARIOS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Default Demo Video Path
 DEFAULT_DEMO_VIDEO = str(DEMO_DIR / "construction_site.mp4")
 
 # Frame Sampling configuration (Process every N frames to ensure fast laptop inference)
 PROCESS_EVERY_N_FRAMES = int(os.getenv("PROCESS_EVERY_N_FRAMES", "3"))
+
+# Temporal Deduplication Cooldown (Seconds to suppress duplicate identity alert spam)
+IDENTITY_EVENT_COOLDOWN_SECONDS = int(os.getenv("IDENTITY_EVENT_COOLDOWN_SECONDS", "5"))
 
 # Vehicle Detection Confidence Threshold
 VEHICLE_CONF_THRESHOLD = float(os.getenv("VEHICLE_CONF_THRESHOLD", "0.40"))
