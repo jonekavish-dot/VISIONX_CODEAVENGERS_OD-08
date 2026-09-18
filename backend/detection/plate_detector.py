@@ -50,7 +50,11 @@ class PlateDetector:
         if frame is None or vehicle is None:
             return None
 
-        vx1, vy1, vx2, vy2 = vehicle["vehicle_bbox"]
+        try:
+            vx1, vy1, vx2, vy2 = [int(round(value)) for value in vehicle["vehicle_bbox"]]
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Vehicle detection has an invalid bounding box: %s", vehicle)
+            return None
         h_frame, w_frame = frame.shape[:2]
         
         # Clip to valid bounds
@@ -68,8 +72,10 @@ class PlateDetector:
         if self.model is not None:
             try:
                 results = self.model(vehicle_crop, conf=self.conf_thresh, verbose=False, device=self.device)
-                if results and len(results) > 0 and results[0].boxes:
-                    box = results[0].boxes[0]
+                if results and len(results) > 0 and results[0].boxes and len(results[0].boxes) > 0:
+                    # A plate model may return several overlapping boxes.  Use its
+                    # highest-confidence result, not whichever box happens to be first.
+                    box = max(results[0].boxes, key=lambda item: float(item.conf[0].item()))
                     conf = float(box.conf[0].item())
                     px1, py1, px2, py2 = box.xyxy[0].cpu().numpy().astype(int)
                     # Convert to global coordinates
@@ -79,6 +85,8 @@ class PlateDetector:
                     gy2 = min(h_frame, vy1 + py2)
                     
                     plate_crop = frame[gy1:gy2, gx1:gx2]
+                    if gx2 <= gx1 or gy2 <= gy1 or plate_crop.size == 0:
+                        raise ValueError("plate model returned an empty clipped crop")
                     return {
                         "plate_bbox": [gx1, gy1, gx2, gy2],
                         "plate_detection_confidence": round(conf, 3),
@@ -112,51 +120,83 @@ class PlateDetector:
         h_frame: int
     ) -> Optional[Tuple[int, int, int, int, float]]:
         """
-        Locates license plate candidate within vehicle crop using morphological gradient & contour analysis.
-        License plates are characteristically high-contrast rectangles with aspect ratio between 2.0 and 5.5.
+        Locates a plate candidate using several views of the bumper.
+
+        Indian registration plates are not all landscape rectangles: cars and trucks
+        are usually about 2:1 to 5:1, while motorcycle plates can be nearly square.
+        Perspective, compression, and dark plates also make a single Otsu gradient
+        unreliable, so candidates are collected from both edge and bright-plate
+        masks before being scored.
         """
         vh, vw = vehicle_crop.shape[:2]
-        # Search specifically in lower bumper region (55% to 95% of the vehicle where plates reside)
-        y_start = int(vh * 0.55)
-        y_end = int(vh * 0.95)
+        if vh < 20 or vw < 20:
+            return None
+
+        # The plate is normally low on a vehicle, but a close frontal view can
+        # place it around the middle.  Include both cases.
+        y_start = int(vh * 0.35)
+        y_end = int(vh * 0.98)
         search_roi = vehicle_crop[y_start:y_end, :]
         if search_roi.size == 0:
             return None
 
         gray = cv2.cvtColor(search_roi, cv2.COLOR_BGR2GRAY)
-        
-        # Morphological gradient to highlight high contrast character/border edges
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
-        morph = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, kernel)
-        _, thresh = cv2.threshold(morph, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
 
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+        # Use multiple masks because white plates, yellow commercial plates, and
+        # shadowed plates produce very different pixel distributions.
+        masks = []
+        for kernel_size in ((9, 3), (15, 5)):
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
+            gradient = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, kernel)
+            masks.append(cv2.threshold(gradient, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1])
+        blackhat_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
+        blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, blackhat_kernel)
+        masks.append(cv2.threshold(blackhat, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1])
+        masks.append(cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1])
+
         best_candidate = None
         best_score = -1.0
 
-        for c in contours:
-            x, y, w, h = cv2.boundingRect(c)
-            if w < 40 or h < 12:
-                continue
-            aspect = float(w) / float(h)
-            area = w * h
-            roi_area = vw * (y_end - y_start)
-            rel_area = area / float(roi_area)
+        for mask in masks:
+            # Join character strokes into one plate-like component.
+            mask = cv2.morphologyEx(
+                mask, cv2.MORPH_CLOSE,
+                cv2.getStructuringElement(cv2.MORPH_RECT, (max(3, vw // 35), 3))
+            )
+            contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                x, y, w, h = cv2.boundingRect(c)
+                min_width = max(18, int(vw * 0.08))
+                min_height = max(8, int(vh * 0.025))
+                if w < min_width or h < min_height:
+                    continue
+                aspect = float(w) / float(h)
+                area = w * h
+                rel_area = area / float(max(1, vw * (y_end - y_start)))
 
-            # Indian & standard plates typically have aspect ratio 2.0 to 5.5
-            if 2.0 <= aspect <= 5.5 and 0.01 <= rel_area <= 0.40:
-                # Center-horizontal preference score
-                center_dist = abs((x + w / 2.0) - (vw / 2.0)) / (vw / 2.0)
-                score = (1.0 - center_dist * 0.6) * (1.0 - abs(aspect - 3.8) / 3.8)
+                # Indian motorcycle plates may be close to square; car/truck
+                # plates are generally landscape. Reject only implausible blobs.
+                if not 1.15 <= aspect <= 7.0 or not 0.003 <= rel_area <= 0.35:
+                    continue
+
+                center_dist = abs((x + w / 2.0) - (vw / 2.0)) / max(1.0, vw / 2.0)
+                vertical = (y + h / 2.0) / max(1.0, (y_end - y_start))
+                aspect_score = max(0.0, 1.0 - abs(aspect - 2.8) / 3.5)
+                score = (
+                    0.42 * aspect_score
+                    + 0.33 * max(0.0, 1.0 - center_dist)
+                    + 0.25 * min(1.0, vertical)
+                )
                 if score > best_score:
                     best_score = score
-                    # Convert to vehicle coordinates
-                    bx1 = max(0, x - 4)
-                    by1 = max(0, (y + y_start) - 4)
-                    bx2 = min(vw, x + w + 4)
-                    by2 = min(vh, (y + y_start) + h + 4)
-                    best_candidate = (bx1, by1, bx2, by2, min(0.95, max(0.50, 0.70 + score * 0.25)))
+                    pad_x = max(3, int(w * 0.08))
+                    pad_y = max(3, int(h * 0.18))
+                    bx1 = max(0, x - pad_x)
+                    by1 = max(0, (y + y_start) - pad_y)
+                    bx2 = min(vw, x + w + pad_x)
+                    by2 = min(vh, (y + y_start) + h + pad_y)
+                    best_candidate = (bx1, by1, bx2, by2, min(0.95, max(0.50, 0.55 + score * 0.40)))
 
         if best_candidate is not None:
             bx1, by1, bx2, by2, conf = best_candidate
@@ -167,12 +207,13 @@ class PlateDetector:
             if gx2 > gx1 and gy2 > gy1:
                 return (gx1, gy1, gx2, gy2, conf)
 
-        # Geometric fallback: default lower-middle bumper plate region
-        # 15% to 85% width, 65% to 85% height of the vehicle
-        fb_x1 = int(vx1 + vw * 0.25)
-        fb_y1 = int(vy1 + vh * 0.65)
-        fb_x2 = int(vx1 + vw * 0.75)
-        fb_y2 = int(vy1 + vh * 0.85)
+        # Last-resort crop for a very small/compressed plate.  Keep it centered
+        # and low, and mark it low confidence so OCR/identity logic does not
+        # treat an arbitrary bumper crop as a successful plate detection.
+        fb_x1 = int(vx1 + vw * 0.20)
+        fb_y1 = int(vy1 + vh * 0.58)
+        fb_x2 = int(vx1 + vw * 0.80)
+        fb_y2 = int(vy1 + vh * 0.92)
         
         gx1 = max(0, min(w_frame, fb_x1))
         gy1 = max(0, min(h_frame, fb_y1))
@@ -180,7 +221,7 @@ class PlateDetector:
         gy2 = max(0, min(h_frame, fb_y2))
         
         if (gx2 - gx1) > 20 and (gy2 - gy1) > 10:
-            return (gx1, gy1, gx2, gy2, 0.60)
+            return (gx1, gy1, gx2, gy2, 0.40)
 
         return None
 
