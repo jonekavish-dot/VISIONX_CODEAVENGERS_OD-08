@@ -73,8 +73,13 @@ python create_demo_video.py
 ```
 
 ### 4. Start the Backend Server
+Run using the runner script:
 ```bash
-uvicorn backend.app:app --host 0.0.0.0 --port 8000
+python run_server.py
+```
+Or via python module syntax:
+```bash
+python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000
 ```
 Interactive API documentation will be available at: `http://localhost:8000/docs`
 
