@@ -6,3 +6,5 @@ vtrace.db
 yolov8n.pt
 data/evidence/*.jpg
 !data/evidence/.gitkeep
+~$*
+

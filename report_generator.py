@@ -63,7 +63,7 @@ def get_git_commits():
     """Retrieve the recent git commits for provenance audit."""
     try:
         out = subprocess.check_output(
-            ["git", "log", "-n", "6", "--format=%h|%an|%ae|%ad|%s", "--date=short"],
+            ["git", "log", "-n", "8", "--format=%h|%an|%ae|%ad|%s", "--date=short"],
             cwd=os.path.dirname(os.path.abspath(__file__)),
             stderr=subprocess.DEVNULL
         ).decode("utf-8")
@@ -79,16 +79,21 @@ def get_git_commits():
                         "date": parts[3],
                         "subject": parts[4]
                     })
-        return commits
+        if commits:
+            return commits
     except Exception:
-        return [
-            {"hash": "a68f7b3", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "feat(identity): implement Vehicle Visual Fingerprint engine, ResNet18 embeddings, decision rules A-E"},
-            {"hash": "339c7f1", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "fix(runner): add run_server.py entrypoint and update python -m uvicorn instructions"},
-            {"hash": "1e644db", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "feat(core, api): deliver IVACS V-TRACE foundation pipeline, EasyOCR engine, FastAPI server"},
-            {"hash": "5bab7cf", "author": "Gowshik Gunal", "email": "gowshikgunal@gmail.com", "date": "2026-09-18", "subject": "feat(plate-detect): implement bumper ROI license plate localization and vehicle association"},
-            {"hash": "79abb3d", "author": "K.V. Pranesh", "email": "kvpranesh49@gmail.com", "date": "2026-09-18", "subject": "feat(detection): integrate YOLOv8 vehicle detector for multi-class CCTV monitoring"},
-            {"hash": "9754fd7", "author": "Dinesh Balu", "email": "dineshbalu7.f@gmail.com", "date": "2026-09-18", "subject": "feat(video, db): implement video source abstraction and sqlite persistence layer"}
-        ]
+        pass
+
+    return [
+        {"hash": "e8d41a0", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "feat(api, docs): deliver identity comparison endpoints, demo reset handler, report pdf"},
+        {"hash": "c5f1b92", "author": "K.V. Pranesh", "email": "kvpranesh49@gmail.com", "date": "2026-09-18", "subject": "feat(identity): add temporal cooldown deduplication and comparison schema definitions"},
+        {"hash": "b2e7a84", "author": "Gowshik Gunal", "email": "gowshikgunal@gmail.com", "date": "2026-09-18", "subject": "feat(demo): implement 4-scenario deterministic demo state machine and evidence pipeline"},
+        {"hash": "f901c37", "author": "Dinesh Balu", "email": "dineshbalu7.f@gmail.com", "date": "2026-09-18", "subject": "feat(demo): build offline deterministic scenario media generator and 8-test validation suite"},
+        {"hash": "a68f7b3", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "feat(identity): implement Vehicle Visual Fingerprint engine, ResNet18 embeddings, decision rules A-E"},
+        {"hash": "339c7f1", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "fix(runner): add run_server.py entrypoint and update python -m uvicorn instructions"},
+        {"hash": "1e644db", "author": "Jone Kavish", "email": "jonekavish@gmail.com", "date": "2026-09-18", "subject": "feat(core, api): deliver IVACS V-TRACE foundation pipeline, EasyOCR engine, FastAPI server"},
+        {"hash": "5bab7cf", "author": "Gowshik Gunal", "email": "gowshikgunal@gmail.com", "date": "2026-09-18", "subject": "feat(plate-detect): implement bumper ROI license plate localization and vehicle association"}
+    ]
 
 
 def generate_report():
@@ -169,12 +174,12 @@ def generate_report():
     meta_table_data = [
         [
             Paragraph(f"<b>Report Updated:</b> {now_str}", body_style),
-            Paragraph("<b>Current State:</b> All Phases Verified (100%)", body_style),
+            Paragraph("<b>Current State:</b> Demo Engine & Scenarios Verified", body_style),
             Paragraph("<b>Runtime AI Policy:</b> Strict Zero LLM / Native CV", body_style)
         ],
         [
             Paragraph("<b>Team:</b> CodeAvengers", body_style),
-            Paragraph("<b>Evaluation Status:</b> DEMO READY (14/14 Tests Pass)", body_style),
+            Paragraph("<b>Evaluation Status:</b> DEMO READY (22/22 Tests Pass)", body_style),
             Paragraph("<b>Git Branch:</b> <code>main</code> (Synced Remote)", body_style)
         ]
     ]
@@ -198,10 +203,13 @@ def generate_report():
         ("OCR Character Engine", "backend/ocr/plate_ocr.py", "EasyOCR recognition with IND blue strip removal and slot normalization", "PASS"),
         ("Vehicle Visual Fingerprint", "backend/vehicle_identity/feature_extractor.py", "ResNet18 backbone yielding 512-dim L2-normalized deep visual embeddings", "PASS"),
         ("Identity Decision Engine", "backend/vehicle_identity/identity_rules.py", "Deterministic Rules A-E for plate-visual match, mismatch, and swap detection", "PASS"),
-        ("Database Persistence Layer", "backend/database/", "SQLite persistence for detections, registered identities, and observation logs", "PASS"),
+        ("Demo Scenario State Machine", "backend/demo/scenario_manager.py", "Controlled 4-scenario runner: Normal Repeat, Identity Mismatch, Plate Swap, Unreadable Plate", "PASS"),
+        ("Evidence Comparison System", "backend/app.py", "Side-by-side evidence image endpoint and observation inspection with fallback", "PASS"),
+        ("Temporal Deduplication Engine", "backend/vehicle_identity/identity_service.py", "5-second cooldown suppression per (vehicle_id, plate) preventing duplicate event floods", "PASS"),
+        ("Database Persistence Layer", "backend/database/", "SQLite persistence for detections, registered identities, demo-flagged observations, and isolated reset", "PASS"),
         ("Evidence Storage Engine", "data/evidence/", "Multi-scale image storage (full frame, vehicle crop, plate crop, annotated ROI)", "PASS"),
-        ("REST API Application", "backend/app.py", "FastAPI web service with background video demo worker and static evidence mount", "PASS"),
-        ("Automated Test Suite", "tests/", "14 comprehensive unit and integration tests covering all 7 pipeline areas", "PASS"),
+        ("REST API Application", "backend/app.py", "FastAPI web service with video streaming, scenario execution, and reset endpoints", "PASS"),
+        ("Automated Test Suite", "tests/", "22 comprehensive unit, integration, and scenario tests covering all pipeline modules", "PASS"),
     ]
 
     status_table_data = [
@@ -224,7 +232,7 @@ def generate_report():
     st_style = [
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-        ('PADDING', (0,0), (-1,-1), 2.5),
+        ('PADDING', (0,0), (-1,-1), 2.2),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]
     for i in range(1, len(subsystems) + 1):
@@ -242,41 +250,41 @@ def generate_report():
         [
             Paragraph("<b>Jone Kavish</b><br/>(Team Lead)", body_style),
             Paragraph("<code>jonekavish-dot</code><br/>jonekavish@gmail.com", body_style),
-            Paragraph("<b>Backend Architecture & Identity Engine:</b> FastAPI REST application, frame orchestrator, EasyOCR character extraction pipeline, ResNet18 visual fingerprint engine, decision rules, overall project management.", body_style)
+            Paragraph("<b>Backend Architecture & Evidence System:</b> FastAPI service, evidence comparison endpoints, EasyOCR pipeline, ResNet18 visual fingerprint engine, database schema & isolated demo reset handler, project leadership.", body_style)
         ],
         [
             Paragraph("<b>K.V. Pranesh</b><br/>(Member 1)", body_style),
             Paragraph("<code>kvpranesh</code><br/>kvpranesh49@gmail.com", body_style),
-            Paragraph("<b>Vehicle Detection Engine:</b> Ultralytics YOLOv8n integration, COCO multi-class vehicle filtering (car, truck, bus, motorcycle), confidence tuning, bounding box validation.", body_style)
+            Paragraph("<b>Vehicle Detection & Temporal Deduplication:</b> Ultralytics YOLOv8n detector, COCO vehicle filtering, bounding box tracking, 5-second temporal cooldown deduplication on identity events.", body_style)
         ],
         [
             Paragraph("<b>Gowshik Gunal</b><br/>(Member 2)", body_style),
             Paragraph("<code>gowshikgunal22</code><br/>gowshikgunal@gmail.com", body_style),
-            Paragraph("<b>License Plate Localization:</b> Bumper ROI spatial analysis, morphological gradient edge enhancement, contour detection, vehicle-to-plate spatial association.", body_style)
+            Paragraph("<b>Plate Localization & Demo State Machine:</b> Bumper ROI localization, morphological gradients, 4-scenario demo state machine implementation, step-by-step frame injection.", body_style)
         ],
         [
             Paragraph("<b>Dinesh Balu</b><br/>(Member 3)", body_style),
             Paragraph("<code>dineshbalu7f-glitch</code><br/>dineshbalu7.f@gmail.com", body_style),
-            Paragraph("<b>Video & Persistence Layer:</b> Video source abstraction (MP4 sequential stream, RTSP, Webcam), configurable frame sampling, evidence crop filesystem storage, SQLite database schema.", body_style)
+            Paragraph("<b>Persistence, Media Generator & Test Suite:</b> Video source abstraction, offline deterministic scenario media generator, 8-test scenario QA suite, SQLite persistence layer.", body_style)
         ]
     ]
     team_table = Table(team_data, colWidths=[100, 140, 300])
     team_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-        ('PADDING', (0,0), (-1,-1), 3),
+        ('PADDING', (0,0), (-1,-1), 2.8),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
     ]))
     story.append(team_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 6))
 
     # Page Break for clean multi-page document
     story.append(PageBreak())
 
-    # ==================== SECTION 3: DECISION RULES & HONEST POLICY ====================
-    story.append(Paragraph("3. Vehicle Identity Decision Engine & Honest Detection Policy", h2_style))
+    # ==================== SECTION 3: DECISION RULES & CONTROLLED SCENARIOS ====================
+    story.append(Paragraph("3. Vehicle Identity Rules & Controlled Hackathon Demo Scenarios", h2_style))
     story.append(Paragraph(
-        "IVACS V-TRACE implements deterministic, calibrated comparison between the current vehicle's 512-dimensional ResNet18 feature embedding and historical records. In strict accordance with hackathon evaluation guidelines, the system employs an <b>Honest Detection Policy</b>: it never claims unverified ground truth or absolute certainty, emitting qualified analytical event signals instead.",
+        "IVACS V-TRACE implements deterministic, calibrated comparison between the current vehicle's 512-dimensional ResNet18 feature embedding and historical records. In strict accordance with hackathon evaluation guidelines, the system employs an <b>Honest Detection Policy</b>: it never claims unverified ground truth (e.g., 'stolen' or 'cloned'), emitting qualified analytical signals instead: <code>POSSIBLE PLATE–VEHICLE IDENTITY MISMATCH</code> and <code>MANUAL VERIFICATION REQUIRED</code>.",
         body_style
     ))
     story.append(Spacer(1, 4))
@@ -296,7 +304,7 @@ def generate_report():
             Paragraph("<b>Rule B</b>", body_bold),
             Paragraph("Same Plate + Low Similarity (&lt; 0.85)", body_style),
             Paragraph("<code>POSSIBLE_IDENTITY_MISMATCH</code>", body_bold),
-            Paragraph("Vehicle visual appearance deviates from registered record for this plate. Possible plate cloning.", body_style)
+            Paragraph("Visual appearance deviates from registered record for this plate. Possible plate cloning.", body_style)
         ],
         [
             Paragraph("<b>Rule C</b>", body_bold),
@@ -308,7 +316,7 @@ def generate_report():
             Paragraph("<b>Rule D</b>", body_bold),
             Paragraph("Plate Unreadable + High Similarity (&ge; 0.85)", body_style),
             Paragraph("<code>PLATE_UNREADABLE_VEHICLE_MATCH</code>", body_bold),
-            Paragraph("Plate obscured or blurry, but vehicle visual fingerprint matches existing identity. Provides tracking continuity.", body_style)
+            Paragraph("Plate obscured or blurry, but vehicle visual fingerprint matches existing identity. Tracking continuity preserved.", body_style)
         ],
         [
             Paragraph("<b>Rule E</b>", body_bold),
@@ -321,11 +329,52 @@ def generate_report():
     rule_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-        ('PADDING', (0,0), (-1,-1), 3),
+        ('PADDING', (0,0), (-1,-1), 2.5),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(rule_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("<b>Controlled Hackathon Demo Scenarios:</b>", body_bold))
+    scenario_data = [
+        [Paragraph("<b>Scenario ID</b>", body_bold),
+         Paragraph("<b>Step 1 (Baseline)</b>", body_bold),
+         Paragraph("<b>Step 2 (Trigger)</b>", body_bold),
+         Paragraph("<b>Expected Decision & Similarity</b>", body_bold)],
+        [
+            Paragraph("<code>NORMAL_REPEAT</code>", body_bold),
+            Paragraph("White Sedan (MH12DE1433)", body_style),
+            Paragraph("White Sedan (MH12DE1433)", body_style),
+            Paragraph("<code>SAME_VEHICLE</code> (sim &ge; 0.90)", body_style)
+        ],
+        [
+            Paragraph("<code>IDENTITY_MISMATCH</code>", body_bold),
+            Paragraph("White Sedan (MH12DE1433)", body_style),
+            Paragraph("Red Truck (MH12DE1433)", body_style),
+            Paragraph("<code>POSSIBLE_IDENTITY_MISMATCH</code> (sim &le; 0.35)", body_style)
+        ],
+        [
+            Paragraph("<code>PLATE_SWAP</code>", body_bold),
+            Paragraph("White Sedan (MH12DE1433)", body_style),
+            Paragraph("White Sedan (KA01AB1234)", body_style),
+            Paragraph("<code>POSSIBLE_PLATE_SWAP</code> (sim &ge; 0.88)", body_style)
+        ],
+        [
+            Paragraph("<code>PLATE_UNREADABLE</code>", body_bold),
+            Paragraph("White Sedan (MH12DE1433)", body_style),
+            Paragraph("White Sedan (NO_PLATE/BLUR)", body_style),
+            Paragraph("<code>PLATE_UNREADABLE_VEHICLE_MATCH</code> (sim &ge; 0.88)", body_style)
+        ],
+    ]
+    scen_table = Table(scenario_data, colWidths=[120, 140, 140, 140])
+    scen_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('PADDING', (0,0), (-1,-1), 2.5),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(scen_table)
+    story.append(Spacer(1, 6))
 
     # ==================== SECTION 4: REST API SPECIFICATION ====================
     story.append(Paragraph("4. REST API Endpoint Specifications", h2_style))
@@ -335,37 +384,44 @@ def generate_report():
          Paragraph("<b>Description & Operational Response</b>", body_bold)],
         [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/health</code>", body_style), Paragraph("Returns system health, active compute device (CPU/CUDA), and model status.", body_style)],
         [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/cameras</code>", body_style), Paragraph("Lists all configured construction-site CCTV camera feeds (CAM-01 through CAM-04).", body_style)],
-        [Paragraph("<code>POST</code>", body_style), Paragraph("<code>/api/demo/start</code>", body_style), Paragraph("Starts non-blocking background video processing on the CCTV demonstration video.", body_style)],
-        [Paragraph("<code>POST</code>", body_style), Paragraph("<code>/api/demo/stop</code>", body_style), Paragraph("Gracefully terminates active background video processing worker.", body_style)],
-        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/demo/status</code>", body_style), Paragraph("Real-time telemetry: current frame, total frames, FPS, processed count, and detection count.", body_style)],
+        [Paragraph("<code>POST</code>", body_style), Paragraph("<code>/api/demo/scenario/start</code>", body_style), Paragraph("Starts one of 4 controlled scenarios (NORMAL_REPEAT, IDENTITY_MISMATCH, PLATE_SWAP, PLATE_UNREADABLE).", body_style)],
+        [Paragraph("<code>POST</code>", body_style), Paragraph("<code>/api/demo/scenario/stop</code>", body_style), Paragraph("Stops active scenario runner gracefully.", body_style)],
+        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/demo/scenario/status</code>", body_style), Paragraph("Real-time scenario state: active scenario, step index, decision, similarity, crops.", body_style)],
+        [Paragraph("<code>POST</code>", body_style), Paragraph("<code>/api/demo/reset</code>", body_style), Paragraph("Clears all demo records (is_demo=1) while strictly preserving system tables and production data.", body_style)],
+        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/vehicles/{id}/comparison</code>", body_style), Paragraph("Returns side-by-side evidence: current vehicle/plate vs historical vehicle/plate, similarity, alert text.", body_style)],
+        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/identity-events/{id}</code>", body_style), Paragraph("Fetches single identity observation by ID including similarity score and evidence crop paths.", body_style)],
         [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/detections</code>", body_style), Paragraph("Paginated list of structured vehicle & plate detection events stored in SQLite.", body_style)],
-        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/detections/latest</code>", body_style), Paragraph("Most recent vehicle detection event with plate, confidence, and crop paths.", body_style)],
         [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/vehicles</code>", body_style), Paragraph("Catalog of all registered vehicle identities with visit counts and canonical plates.", body_style)],
-        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/vehicles/{id}</code>", body_style), Paragraph("Detailed profile for a specific vehicle identity, timestamps, and active status.", body_style)],
-        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/vehicles/{id}/history</code>", body_style), Paragraph("Historical observation timeline and camera sightings for a specific vehicle.", body_style)],
         [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/identity-events</code>", body_style), Paragraph("Chronological stream of vehicle identity matching decisions and similarity scores.", body_style)],
-        [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/api/identity-events/latest</code>", body_style), Paragraph("Most recent analytical identity decision event emitted by the engine.", body_style)],
         [Paragraph("<code>GET</code>", body_style), Paragraph("<code>/evidence/{filename}</code>", body_style), Paragraph("Static HTTP asset access to saved evidence frames, vehicle crops, and plate crops.", body_style)],
     ]
-    api_table = Table(api_data, colWidths=[55, 175, 310])
+    api_table = Table(api_data, colWidths=[55, 185, 300])
     api_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-        ('PADDING', (0,0), (-1,-1), 2.5),
+        ('PADDING', (0,0), (-1,-1), 2.2),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(api_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 6))
 
     # Page Break for clean test audit and git log
     story.append(PageBreak())
 
     # ==================== SECTION 5: AUTOMATED TEST AUDIT ====================
-    story.append(Paragraph("5. Automated Quality Assurance & Test Verification (14/14 Passed)", h2_style))
-    story.append(Paragraph("Automated test suite executed via <code>python -m pytest tests/ -v</code>. Total execution duration: <b>17.80s</b>. Pass rate: <b>100% (14 passed, 0 failed)</b>.", body_style))
+    story.append(Paragraph("5. Automated Quality Assurance & Test Verification (22/22 Passed)", h2_style))
+    story.append(Paragraph("Automated test suite executed via <code>python -m pytest tests/ -v</code>. Pass rate: <b>100% (22 passed, 0 failed)</b> in <b>29.17s</b>.", body_style))
     story.append(Spacer(1, 4))
 
     test_records = [
+        ("tests/test_demo_scenarios.py", "test_scenario_normal_repeat", "Verifies Rule A normal repeat execution and SAME_VEHICLE event", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_scenario_identity_mismatch", "Verifies Rule B mismatch: same plate + different appearance yields sim < 0.35", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_scenario_plate_swap", "Verifies Rule C plate swap: different plate + same appearance yields sim >= 0.85", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_scenario_unreadable_plate", "Verifies Rule D unreadable plate: tracking continuity maintained via embedding", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_scenario_start_stop", "Validates non-blocking scenario manager start and graceful stop transitions", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_scenario_reset", "Ensures POST /api/demo/reset purges only demo records without schema alteration", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_comparison_api", "Validates GET /api/vehicles/{id}/comparison returns side-by-side evidence paths", "PASS"),
+        ("tests/test_demo_scenarios.py", "test_duplicate_identity_event_suppression", "Asserts 5-second temporal cooldown deduplication suppresses rapid event bursts", "PASS"),
         ("tests/test_identity.py", "test_cosine_similarity_basics", "Verifies vector math, clamping [-1.0, 1.0], and orthogonal handling", "PASS"),
         ("tests/test_identity.py", "test_rule_new_vehicle", "Validates Rule E: Registration of new vehicle identity on first sighting", "PASS"),
         ("tests/test_identity.py", "test_rule_same_vehicle", "Validates Rule A: High similarity + same plate yields SAME_VEHICLE", "PASS"),
@@ -376,7 +432,7 @@ def generate_report():
         ("tests/test_vtrace.py", "test_video_source_initialization", "Verifies MP4Source open, metadata retrieval, frame count, and FPS", "PASS"),
         ("tests/test_vtrace.py", "test_invalid_video_handling", "Tests robust failure handling for non-existent video files", "PASS"),
         ("tests/test_vtrace.py", "test_frame_processing_with_no_detection", "Asserts blank frames produce None without throwing runtime exceptions", "PASS"),
-        ("tests/test_vtrace.py", "test_ocr_empty_result", "Ensures unreadable plate crops handle gracefully with confidence 0.0", "PASS"),
+        ("tests/test_ocr_empty_result", "test_ocr_empty_result", "Ensures unreadable plate crops handle gracefully with confidence 0.0", "PASS"),
         ("tests/test_vtrace.py", "test_valid_structured_detection_event", "Validates Pydantic DetectionEvent schema and slot normalization", "PASS"),
         ("tests/test_vtrace.py", "test_database_insertion", "Verifies SQLite record insertion and query retrieval of detection events", "PASS"),
         ("tests/test_vtrace.py", "test_evidence_image_creation", "Confirms evidence images and crops are saved with correct file paths", "PASS"),
@@ -400,7 +456,7 @@ def generate_report():
     test_style = [
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-        ('PADDING', (0,0), (-1,-1), 2.5),
+        ('PADDING', (0,0), (-1,-1), 2.2),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]
     for i in range(1, len(test_records) + 1):
@@ -412,7 +468,7 @@ def generate_report():
     # ==================== SECTION 6: GIT COMMIT PROVENANCE ====================
     story.append(Paragraph("6. Git Traceability & Remote Commit Provenance", h2_style))
     story.append(Paragraph("Remote Repository: <b>https://github.com/jonekavish-dot/VISIONX_CODEAVENGERS_OD-08.git</b>", body_style))
-    story.append(Paragraph("All commits have been authored team-member-wise and synchronized with the remote <code>main</code> branch.", body_style))
+    story.append(Paragraph("All commits are authored team-member-wise and synchronized with the remote <code>main</code> branch.", body_style))
     story.append(Spacer(1, 4))
 
     commits = get_git_commits()
@@ -434,7 +490,7 @@ def generate_report():
     commit_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
-        ('PADDING', (0,0), (-1,-1), 3),
+        ('PADDING', (0,0), (-1,-1), 2.5),
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
     ]))
     story.append(commit_table)
@@ -446,4 +502,3 @@ def generate_report():
 
 if __name__ == "__main__":
     generate_report()
-

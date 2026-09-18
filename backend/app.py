@@ -41,14 +41,21 @@ from backend.database.database import (
     get_vehicle_identity_by_id,
     get_identity_observations_for_vehicle,
     get_all_identity_observations,
-    get_latest_identity_observation
+    get_latest_identity_observation,
+    get_identity_observation_by_id,
+    get_vehicle_comparison,
+    reset_demo_data
 )
 from backend.vehicle_identity.schemas import (
     VehicleIdentity,
     IdentityObservation,
     VehicleIdentityListResponse,
-    IdentityObservationListResponse
+    IdentityObservationListResponse,
+    VehicleComparisonResponse,
+    ScenarioStatusResponse,
+    ScenarioStartRequest
 )
+from backend.demo.scenario_manager import ScenarioManager
 from backend.video.mp4_source import MP4Source
 from backend.services.frame_processor import FrameProcessor
 
@@ -184,18 +191,21 @@ class DemoRunner:
 # App Lifecycle
 frame_processor: Optional[FrameProcessor] = None
 demo_runner = DemoRunner()
+scenario_manager = ScenarioManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global frame_processor
+    global frame_processor, scenario_manager
     logger.info("Initializing IVACS V-TRACE Backend...")
     init_db()
     # Initialize shared FrameProcessor
     frame_processor = FrameProcessor()
-    logger.info("IVACS V-TRACE frame processor initialized.")
+    scenario_manager.identity_service = frame_processor.identity_service
+    logger.info("IVACS V-TRACE frame processor and scenario manager initialized.")
     yield
     logger.info("Shutting down IVACS V-TRACE Backend...")
     demo_runner.stop()
+    scenario_manager.stop_scenario()
 
 app = FastAPI(
     title="IVACS V-TRACE API",
@@ -309,3 +319,52 @@ def get_identity_events(limit: int = Query(50, ge=1, le=500), offset: int = Quer
 @app.get("/api/identity-events/latest", response_model=Optional[IdentityObservation])
 def get_latest_identity_event():
     return get_latest_identity_observation()
+
+# 13. Single Identity Event By ID Endpoint
+@app.get("/api/identity-events/{id}", response_model=IdentityObservation)
+def get_identity_event_by_id_endpoint(id: int):
+    obs = get_identity_observation_by_id(id)
+    if not obs:
+        raise HTTPException(status_code=404, detail=f"Identity event with ID {id} not found.")
+    return obs
+
+# 14. Vehicle Visual Evidence Comparison Endpoint
+@app.get("/api/vehicles/{vehicle_id}/comparison", response_model=VehicleComparisonResponse)
+def get_vehicle_comparison_endpoint(vehicle_id: str):
+    comp = get_vehicle_comparison(vehicle_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail=f"Visual comparison data for vehicle '{vehicle_id}' not found.")
+    return comp
+
+# 15. Demo Scenario Start Endpoint
+@app.post("/api/demo/scenario/start", response_model=ScenarioStatusResponse)
+def start_demo_scenario(req: ScenarioStartRequest):
+    try:
+        status = scenario_manager.start_scenario(req.scenario)
+        return status
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as ex:
+        logger.error(f"Failed to execute demo scenario: {ex}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Scenario execution failed: {str(ex)}")
+
+# 16. Demo Scenario Stop Endpoint
+@app.post("/api/demo/scenario/stop")
+def stop_demo_scenario():
+    scenario_manager.stop_scenario()
+    return {"message": "Demo scenario stopped successfully"}
+
+# 17. Demo Scenario Status Endpoint
+@app.get("/api/demo/scenario/status", response_model=ScenarioStatusResponse)
+def get_demo_scenario_status():
+    return scenario_manager.get_scenario_status()
+
+# 18. Demo Data Reset Endpoint (Safely clears only DEMO data)
+@app.post("/api/demo/reset")
+def reset_demo_endpoint():
+    deleted_stats = scenario_manager.reset_demo()
+    return {
+        "status": "success",
+        "message": "Demo scenario data safely reset. Production records and database structure preserved.",
+        "deleted_records": deleted_stats
+    }
