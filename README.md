@@ -1,6 +1,7 @@
 # IVACS V-TRACE
 ### Vehicle Trust, Route & Evidence Engine
-**Problem Statement OD-08:** License Plate Detection and Recognition from construction-site CCTV footage.
+**Problem Statement OD-08:** License Plate Detection and Recognition from Construction-Site CCTV Footage  
+**Runtime AI Policy:** **Strict Zero LLM / Zero Generative AI at Runtime** (Native Computer Vision, Deep Visual Embeddings & Deterministic Trust Pipeline)
 
 ---
 
@@ -8,47 +9,88 @@
 
 | Name | Role | GitHub | Email | Subsystem Responsibility |
 | :--- | :--- | :--- | :--- | :--- |
-| **Jone Kavish** | **Team Lead** | [`@jonekavish-dot`](https://github.com/jonekavish-dot) | `jonekavish@gmail.com` | **Backend & Team Lead:** FastAPI REST application, identity comparison endpoints, EasyOCR character extraction pipeline, ResNet18 visual fingerprint engine, database schema & isolated demo reset handler, system architecture |
-| **K.V. Pranesh** | **Member 1** | [`@kvpranesh`](https://github.com/kvpranesh) | `kvpranesh49@gmail.com` | **Vehicle Detection & Cooldown:** Ultralytics YOLOv8 nano model integration, multi-class vehicle filtering, temporal cooldown deduplication on identity events |
-| **Gowshik Gunal** | **Member 2** | [`@gowshikgunal22`](https://github.com/gowshikgunal22) | `gowshikgunal@gmail.com` | **License Plate Localization & Demo Runner:** Bumper ROI localization, morphological gradient filtering, vehicle-to-plate association, 4-scenario demo state machine implementation |
-| **Dinesh Balu** | **Member 3** | [`@dineshbalu7f-glitch`](https://github.com/dineshbalu7f-glitch) | `dineshbalu7.f@gmail.com` | **Video, Test Suite & Media Generator:** Video source abstraction (MP4, RTSP, Webcam), offline deterministic scenario media generator, 8-test scenario QA suite, SQLite persistence layer |
+| **Jone Kavish** | **Team Lead** | [`@jonekavish-dot`](https://github.com/jonekavish-dot) | `jonekavish@gmail.com` | **Backend & Team Lead, OCR, React Command Center:** Overall system architecture, FastAPI web service (29 endpoints), React Command Center UI, EasyOCR character extraction pipeline, ResNet18 visual fingerprint engine, database schema & isolated demo reset handler, report generation, Git management. |
+| **K.V. Pranesh** | **Member 1** | [`@kvpranesh`](https://github.com/kvpranesh) | `kvpranesh49@gmail.com` | **Security Alert Engine & Deduplication:** Deterministic alert rule templates, 10s temporal cooldown deduplication, explainable `VehicleTrustSnapshot` synthesis, YOLOv8 nano vehicle detector integration, 15-test final MVP QA suite. |
+| **Gowshik Gunal** | **Member 2** | [`@gowshikgunal22`](https://github.com/gowshikgunal22) | `gowshikgunal@gmail.com` | **Vehicle Registry & Plate Localization:** Vehicle registry abstraction layer (`DemoVehicleRegistry` SQLite implementation + `VahanVehicleRegistry` government stub), registry attribute consistency check, bumper-ROI plate localization, 4-scenario demo state machine. |
+| **Dinesh Balu** | **Member 3** | [`@dineshbalu7f-glitch`](https://github.com/dineshbalu7f-glitch) | `dineshbalu7.f@gmail.com` | **Site Context, Route Integrity & Media:** Construction site permit manager, camera zone topology (CAM-01 to CAM-04), route integrity checker (impossible transitions & speed violations), offline scenario media generator, SQLite persistence layer. |
 
 ---
 
 ## 🎯 Architecture Overview
 
 ```
-VIDEO STREAM / CONTROLLED SCENARIOS
-              │
-              ▼
-   Frame Sampler (Configurable N frames)
-              │
-              ▼
-   YOLOv8 Vehicle Detector (Car, Truck, Bus, Motorcycle)
-              │
-              ├─────────────────────────────────────────────────┐
-              ▼                                                 ▼
-   License Plate Detector (Bumper ROI)           ResNet18 Feature Extractor
-              │                                  (512-dim Normalized Embedding)
-              ▼                                                 │
-   EasyOCR Engine (Slot Normalization)                          │
-              │                                                 │
-              └───────────────────────┬─────────────────────────┘
-                                      ▼
-                       Vehicle Identity Service
-                    (Cosine Similarity & Rules A-E)
-                    (5s Temporal Deduplication Cooldown)
-                                      │
-                                      ▼
-                   Structured DetectionEvent & IdentityEvent
-                                      │
-     ┌────────────────────────────────┴───────────────────┐
-     ▼                                                    ▼
-SQLite Database (vtrace.db)                     Evidence Store (data/evidence/)
-- detections                                    - current_frame.jpg
-- vehicle_identities                            - vehicle_crop.jpg
-- identity_observations (is_demo flagged)       - plate_crop.jpg
-                                                - annotated_frame.jpg
+                      +-----------------------------------------------+
+                      |          Construction-Site CCTV Feeds         |
+                      |   CAM-01 (Entry) | CAM-02 (Batching Plant)    |
+                      |   CAM-03 (Loading Area) | CAM-04 (Exit Gate)  |
+                      +-----------------------------------------------+
+                                             |
+                                             v
+                      +-----------------------------------------------+
+                      |      Video Ingestion Layer (MP4/RTSP/Webcam)  |
+                      |      Configurable Frame Stride & Decimation   |
+                      +-----------------------------------------------+
+                                             |
+                                             v
+                      +-----------------------------------------------+
+                      |       Vehicle Detection (YOLOv8n - PyTorch)   |
+                      |       Classes: car, truck, bus, motorcycle    |
+                      +-----------------------------------------------+
+                                             |
+                                             v
+                      +-----------------------------------------------+
+                      |    Bumper-ROI Plate Localization (OpenCV)     |
+                      |   Morphological Gradients + Geometric Filters |
+                      +-----------------------------------------------+
+                                             |
+                                             v
+                      +-----------------------------------------------+
+                      |       Plate Text Recognition (EasyOCR)        |
+                      |    IND Blue Strip Cropping + Slot Format      |
+                      +-----------------------------------------------+
+                                             |
+                                             v
+                      +-----------------------------------------------+
+                      |   ResNet18 Deep Visual Fingerprint (512-D)    |
+                      |      L2-Normalized Embedding Extraction       |
+                      +-----------------------------------------------+
+                                             |
+                                             v
+                      +-----------------------------------------------+
+                      |   Deterministic Identity Decision Engine      |
+                      |        Cosine Similarity & Rules A - E        |
+                      +-----------------------------------------------+
+                                             |
+                    +------------------------+------------------------+
+                    |                                                 |
+                    v                                                 v
++-----------------------------------+             +-----------------------------------+
+|     Vehicle Registry Service      |             |    Site Context & Route Engine    |
+| (Demo Registry / VAHAN Connector) |             |  (Permit Validation & Transits)   |
++-----------------------------------+             +-----------------------------------+
+                    \                                                 /
+                     \                                               /
+                      +---------------------------------------------+
+                      |       Security Alert Engine & Deduplication |
+                      |       (10s Cooldown, Rules-Based Alerts)    |
+                      +---------------------------------------------+
+                                             |
+                                             v
+                      +---------------------------------------------+
+                      |  Unified SQLite Persistence (vtrace.db)     |
+                      |  Multi-Scale Evidence Store (data/evidence/)|
+                      +---------------------------------------------+
+                                             |
+                                             v
+                      +---------------------------------------------+
+                      |  FastAPI Web Service (29 Endpoints)         |
+                      +---------------------------------------------+
+                                             |
+                                             v
+                      +---------------------------------------------+
+                      |   React / Tailwind Command Center Dashboard |
+                      | (4-CCTV Grid, KPI Bar, Alert Log, Scenarios)|
+                      +---------------------------------------------+
 ```
 
 ---
@@ -56,48 +98,115 @@ SQLite Database (vtrace.db)                     Evidence Store (data/evidence/)
 ## 🛡️ AI & Privacy Policy Compliance
 * **Zero Generative AI / LLM at Runtime:** Strictly adheres to OD-08 problem statement rules. All vehicle detection, plate localization, OCR character extraction, and visual fingerprinting run natively using classical computer vision (`OpenCV`), lightweight neural networks (`YOLOv8n`, `ResNet18`), and optical character recognition (`EasyOCR`).
 * **Honest Detection Policy:** Never claims unverified ground truth (e.g. "stolen" or "cloned"); analytical alerts use precise qualified signals: `POSSIBLE_IDENTITY_MISMATCH` and `MANUAL VERIFICATION REQUIRED`.
-* No external API calls to OpenAI, Gemini, Claude, or third-party cloud LLMs.
+* **Zero External Cloud Calls:** Operates 100% offline at the edge without third-party API dependencies or data leakage.
 
 ---
 
-## 🚦 Controlled Demo Scenarios
+## 🚦 Deterministic Decision Rules & Scenarios
+
+| Rule Code | Plate Observed | Visual Match ($\ge 0.85$) | Decision Output | Risk Level | Action Triggered |
+|---|---|---|---|---|---|
+| **Rule A** | Known Plate | **Yes** | `SAME_VEHICLE` | **LOW** | Consistent observation; update centroid |
+| **Rule B** | Known Plate | **No** | `POSSIBLE_IDENTITY_MISMATCH` | **CRITICAL** | Security alert; prompt side-by-side evidence audit |
+| **Rule C** | Different Plate | **Yes** | `POSSIBLE_PLATE_SWAP` | **HIGH** | Security alert; vehicle re-identified under false tag |
+| **Rule D** | Unreadable | **Yes** | `PLATE_UNREADABLE_VEHICLE_MATCH` | **MEDIUM** | Visual tracking continuity preserved |
+| **Rule E** | First Sighting | N/A | `NEW_VEHICLE` | **INFO** | Register new persistent vehicle identity |
+
+### Controlled Hackathon Demo Scenarios
 
 | Scenario ID | Step 1 (Baseline) | Step 2 (Trigger) | Decision Emitted | Expected Metric |
 | :--- | :--- | :--- | :--- | :--- |
-| `NORMAL_REPEAT` | White Sedan (`MH12DE1433`) | White Sedan (`MH12DE1433`) | `SAME_VEHICLE` | Cosine similarity &ge; 0.90 |
-| `IDENTITY_MISMATCH` | White Sedan (`MH12DE1433`) | Red Truck (`MH12DE1433`) | `POSSIBLE_IDENTITY_MISMATCH` | Cosine similarity &le; 0.35 |
-| `PLATE_SWAP` | White Sedan (`MH12DE1433`) | White Sedan (`KA01AB1234`) | `POSSIBLE_PLATE_SWAP` | Cosine similarity &ge; 0.88 |
-| `PLATE_UNREADABLE` | White Sedan (`MH12DE1433`) | White Sedan (`NO_PLATE`) | `PLATE_UNREADABLE_VEHICLE_MATCH` | Cosine similarity &ge; 0.88 |
+| `NORMAL_REPEAT` | Tata Starbus (`MH12DE1433`) | Tata Starbus (`MH12DE1433`) | `SAME_VEHICLE` | Cosine similarity &ge; 0.90 |
+| `IDENTITY_MISMATCH` | Tata Starbus (`MH12DE1433`) | Tipper Truck (`MH12DE1433`) | `POSSIBLE_IDENTITY_MISMATCH` | Cosine similarity &le; 0.35 |
+| `PLATE_SWAP` | Tata Starbus (`MH12DE1433`) | Tata Starbus (`KA01AB1234`) | `POSSIBLE_PLATE_SWAP` | Cosine similarity &ge; 0.88 |
+| `PLATE_UNREADABLE` | Tata Starbus (`MH12DE1433`) | Tata Starbus (`NO_PLATE`) | `PLATE_UNREADABLE_VEHICLE_MATCH` | Cosine similarity &ge; 0.88 |
 
 ---
 
-## 🚀 Quick Start
+## 📡 Complete REST API Taxonomy (29 Endpoints)
+
+| Category | Method | Endpoint | Description |
+| :--- | :--- | :--- | :--- |
+| **System** | `GET` | `/api/health` | Service health, active compute device (CPU/CUDA), and model status |
+| **Dashboard** | `GET` | `/api/dashboard/summary` | Aggregate fleet metrics: active alerts, total vehicles, trust index |
+| **Dashboard** | `GET` | `/api/dashboard/live` | Real-time live status for 4 camera cards (plate, speed, permit, route) |
+| **Cameras** | `GET` | `/api/cameras` | List configured construction site CCTV cameras (CAM-01 to CAM-04) |
+| **Cameras** | `GET` | `/api/cameras/{id}/stream` | MJPEG streaming video feed for live monitoring grid |
+| **Detections** | `POST` | `/api/process-video` | Ingests video file or stream URL through detection and OCR pipeline |
+| **Detections** | `GET` | `/api/detections` | Paginated list of all stored detection events from SQLite |
+| **Detections** | `GET` | `/api/detections/latest` | Most recent vehicle & license plate detection event |
+| **Detections** | `GET` | `/api/detections/{id}` | Single detection event detail with evidence crops |
+| **Identity** | `GET` | `/api/vehicles` | List of all registered vehicle identities with visit counts & canonical plates |
+| **Identity** | `GET` | `/api/vehicles/{id}` | Detailed vehicle record by ID with active status and first/last seen |
+| **Identity** | `GET` | `/api/vehicles/{id}/history` | Historical timeline of all visual observations and sightings |
+| **Identity** | `GET` | `/api/vehicles/{id}/comparison` | Side-by-side evidence: current vehicle/plate vs historical reference |
+| **Identity** | `GET` | `/api/vehicles/{id}/trust-snapshot` | Multi-factor vehicle trust calculation, visual match, permit & route checks |
+| **Identity** | `GET` | `/api/identity-events` | Feed of identity match events with decision rules (A-E) and similarities |
+| **Identity** | `GET` | `/api/identity-events/latest` | Most recent identity match decision event |
+| **Identity** | `GET` | `/api/identity-events/{id}` | Historical identity observation by ID with evidence paths and metrics |
+| **Alerts** | `GET` | `/api/alerts` | Paginated security alert feed filtered by severity, camera, or status |
+| **Alerts** | `GET` | `/api/alerts/{id}` | Single alert detail breakdown with JSON payload |
+| **Alerts** | `POST` | `/api/alerts/{id}/dismiss` | Operator alert acknowledgement and dismissal handler |
+| **Registry** | `GET` | `/api/registry/vehicle/{plate}` | Vehicle registration query (RTO/VAHAN mock structure) |
+| **Registry** | `POST` | `/api/demo/registry/reset` | Reset demo registry table to factory state |
+| **Permits** | `GET` | `/api/permits` | Active and historical construction site access permits |
+| **Permits** | `GET` | `/api/permits/{plate}` | Permits associated with a specific vehicle plate |
+| **Site** | `GET` | `/api/site/zones` | Camera-to-zone spatial topological mapping |
+| **Site** | `GET` | `/api/site/routes` | Directed graph of permitted transitions and traversal durations |
+| **Scenarios** | `POST` | `/api/demo/scenario/start` | Launch one of 4 controlled scenarios (`NORMAL_REPEAT`, `IDENTITY_MISMATCH`, etc.) |
+| **Scenarios** | `POST` | `/api/demo/scenario/stop` | Gracefully stop active scenario runner |
+| **Scenarios** | `GET` | `/api/demo/scenario/status` | Real-time scenario state: active scenario, step index, decision, similarity |
+| **Scenarios** | `POST` | `/api/demo/reset` | Safe purge of demo records (`is_demo = 1`) strictly preserving production schemas |
+| **Media** | `GET` | `/api/media` | Universal local evidence image streaming endpoint (handles absolute & relative paths) |
+| **Media** | `GET` | `/evidence/{filename}` | Direct static HTTP access to saved evidence frames and crops |
+
+---
+
+## 🧪 Automated QA Suite (37/37 Passing - 100%)
+
+The complete test suite verifies the end-to-end computer vision pipeline, deep visual embeddings, deterministic rules, registry consistency checks, site permits, route anomalies, and alert deduplication.
+
+```bash
+python -m pytest tests/ -v
+```
+
+```
+====================== 37 passed in 29.56s =======================
+tests/test_final_mvp.py (15/15 PASS)
+tests/test_demo_scenarios.py (8/8 PASS)
+tests/test_identity.py (7/7 PASS)
+tests/test_vtrace.py (7/7 PASS)
+```
+
+---
+
+## 🚀 Quick Start Guide
 
 ### 1. Installation
 ```bash
 pip install opencv-python ultralytics easyocr fastapi uvicorn reportlab pytest torchvision torch
 ```
 
-### 2. Run Automated Tests (All 22 Unit, Integration & Scenario Tests)
+### 2. Build Frontend (React Command Center)
 ```bash
-python -m pytest tests/ -v
+cd frontend
+npm install
+npm run build
+cd ..
 ```
+*(The pre-built React application is automatically served by FastAPI at `http://localhost:8000/`)*
 
 ### 3. Generate Scenario Media
 ```bash
 python scripts/setup_demo_media.py
 ```
 
-### 4. Start the Backend Server
-Run using the runner script:
+### 4. Start the Unified Server
 ```bash
 python run_server.py
 ```
-Or via python module syntax:
-```bash
-python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000
-```
-Interactive API documentation will be available at: `http://localhost:8000/docs`
+* **Command Center Dashboard:** Open `http://localhost:8000` in your web browser.
+* **Interactive API Documentation:** Open `http://localhost:8000/docs` (Swagger UI).
 
 ### 5. Run Live Verification
 ```bash
@@ -106,33 +215,16 @@ python verify_identity_mismatch_live.py
 
 ---
 
-## 📡 REST API Endpoints
+## 📄 Project Documentation & Reports
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/health` | Service health, active device (CPU/CUDA), and model status |
-| `GET` | `/api/cameras` | List configured construction site CCTV cameras (CAM-01 to CAM-04) |
-| `POST` | `/api/demo/scenario/start` | Launch one of 4 controlled scenarios (`NORMAL_REPEAT`, `IDENTITY_MISMATCH`, etc.) |
-| `POST` | `/api/demo/scenario/stop` | Gracefully stop active scenario runner |
-| `GET` | `/api/demo/scenario/status` | Real-time scenario state: active scenario, step index, decision, similarity |
-| `POST` | `/api/demo/reset` | Safe purge of demo records (`is_demo = 1`) strictly preserving production schemas |
-| `GET` | `/api/vehicles/{vehicle_id}/comparison` | Side-by-side evidence: current vehicle/plate vs historical vehicle/plate, similarity, alert text |
-| `GET` | `/api/identity-events/{id}` | Historical identity observation by ID with evidence paths and similarity metrics |
-| `GET` | `/api/detections` | Paginated list of all stored detection events from SQLite |
-| `GET` | `/api/detections/latest` | Most recent vehicle & license plate detection event |
-| `GET` | `/api/vehicles` | List of all registered vehicle identities with visit counts & canonical plates |
-| `GET` | `/api/vehicles/{vehicle_id}` | Detailed vehicle record by ID with active status and first/last seen timestamps |
-| `GET` | `/api/vehicles/{vehicle_id}/history` | Historical timeline of all visual observations and sightings for a vehicle |
-| `GET` | `/api/identity-events` | Feed of identity match events with decision rules (Rules A-E) and similarity scores |
-| `GET` | `/api/identity-events/latest` | Most recent identity match decision event |
-| `GET` | `/evidence/{filename}` | Direct static HTTP access to saved evidence frames and crops |
+* **Audit Progress Report (PDF):** `IVACS_VTRACE_Progress_Report.pdf` (Workspace root)
+* **Final Architecture Specification:** [`ARTIFACTS/final_architecture.md`](ARTIFACTS/final_architecture.md)
+* **90-Second Evaluator Demo Script:** [`ARTIFACTS/final_demo_script.md`](ARTIFACTS/final_demo_script.md)
+* **Complete QA Test Verification Report:** [`ARTIFACTS/final_test_report.md`](ARTIFACTS/final_test_report.md)
+* **Operational Limitations & Edge Cases:** [`ARTIFACTS/limitations.md`](ARTIFACTS/limitations.md)
+* **Future Government VAHAN Integration:** [`ARTIFACTS/future_vahan_integration.md`](ARTIFACTS/future_vahan_integration.md)
 
----
-
-## 📄 Progress Report
-A live, continuously updated PDF progress report is saved directly in the project root:
-**`IVACS_VTRACE_Progress_Report.pdf`**
-You can update it at any time by executing:
+To regenerate the PDF report at any time:
 ```bash
 python report_generator.py
 ```

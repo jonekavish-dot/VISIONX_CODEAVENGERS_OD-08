@@ -111,8 +111,106 @@ def init_db():
     if "is_demo" not in obs_cols:
         cursor.execute("ALTER TABLE identity_observations ADD COLUMN is_demo INTEGER DEFAULT 0")
 
+    # 4. Vehicle Registry Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS vehicle_registry (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plate TEXT UNIQUE NOT NULL,
+        registration_date TEXT,
+        manufacturer TEXT,
+        model TEXT,
+        colour TEXT,
+        vehicle_type TEXT,
+        fuel_type TEXT,
+        insurance_status TEXT,
+        fitness_status TEXT,
+        pucc_status TEXT,
+        source TEXT NOT NULL DEFAULT 'DEMO_REGISTRY',
+        is_demo INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """)
+
+    # 5. Permits Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS permits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plate TEXT NOT NULL,
+        site_id TEXT NOT NULL DEFAULT 'SITE-BLR-01',
+        allowed_zones TEXT NOT NULL,
+        valid_from TEXT NOT NULL,
+        valid_until TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        is_demo INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    # 6. Camera Zones Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS camera_zones (
+        camera_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        zone TEXT NOT NULL,
+        description TEXT NOT NULL
+    )
+    """)
+
+    # 7. Route Rules Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS route_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_zone TEXT NOT NULL,
+        to_zone TEXT NOT NULL,
+        minimum_travel_seconds INTEGER NOT NULL,
+        maximum_travel_seconds INTEGER NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1
+    )
+    """)
+
+    # 8. Vehicle Transit History Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS vehicle_transit_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id TEXT NOT NULL,
+        plate TEXT,
+        camera_id TEXT NOT NULL,
+        zone TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        is_demo INTEGER DEFAULT 1
+    )
+    """)
+
+    # 9. Alerts Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        vehicle_id TEXT,
+        plate TEXT,
+        camera_id TEXT NOT NULL,
+        zone TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        title TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        action_required TEXT NOT NULL,
+        requires_manual_review INTEGER NOT NULL DEFAULT 1,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        review_status TEXT NOT NULL DEFAULT 'PENDING',
+        is_demo INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """)
+
     conn.commit()
     conn.close()
+
+    # Seed demo configurations if empty
+    seed_all_demo_data()
+
 
 # ==================== DETECTIONS TABLE OPERATIONS ====================
 
@@ -556,10 +654,397 @@ def reset_demo_data() -> Dict[str, int]:
     o_count = cursor.rowcount
     cursor.execute("DELETE FROM vehicle_identities WHERE is_demo = 1")
     v_count = cursor.rowcount
+    cursor.execute("DELETE FROM alerts WHERE is_demo = 1")
+    a_count = cursor.rowcount
+    cursor.execute("DELETE FROM vehicle_transit_history WHERE is_demo = 1")
+    t_count = cursor.rowcount
     conn.commit()
     conn.close()
     return {
         "deleted_detections": d_count,
         "deleted_observations": o_count,
-        "deleted_vehicles": v_count
+        "deleted_vehicles": v_count,
+        "deleted_alerts": a_count,
+        "deleted_transits": t_count
     }
+
+
+# ==================== SEEDING OPERATIONS ====================
+
+def seed_all_demo_data():
+    """Seeds demo registry, permits, camera zones, and route rules if tables are empty."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 1. Seed Camera Zones
+    cursor.execute("SELECT COUNT(*) FROM camera_zones")
+    if cursor.fetchone()[0] == 0:
+        zones = [
+            ("CAM-01", "Gate Entrance", "GATE_IN", "Primary site entry gate equipped with vehicle inspection and ANPR."),
+            ("CAM-02", "Material Yard", "MATERIAL_YARD", "Heavy materials staging, unloading, and supply depot."),
+            ("CAM-03", "Active Zone", "ACTIVE_ZONE", "Core building superstructure and active equipment zone."),
+            ("CAM-04", "Gate Exit", "GATE_OUT", "Departure gate with outbound vehicle compliance verification.")
+        ]
+        cursor.executemany("INSERT INTO camera_zones (camera_id, name, zone, description) VALUES (?, ?, ?, ?)", zones)
+
+    # 2. Seed Route Rules
+    cursor.execute("SELECT COUNT(*) FROM route_rules")
+    if cursor.fetchone()[0] == 0:
+        rules = [
+            ("GATE_IN", "MATERIAL_YARD", 10, 600, 1),
+            ("MATERIAL_YARD", "ACTIVE_ZONE", 15, 1200, 1),
+            ("ACTIVE_ZONE", "GATE_OUT", 15, 1200, 1),
+            ("GATE_IN", "ACTIVE_ZONE", 20, 1200, 1),
+            ("MATERIAL_YARD", "GATE_OUT", 30, 1800, 1)
+        ]
+        cursor.executemany("""
+            INSERT INTO route_rules (from_zone, to_zone, minimum_travel_seconds, maximum_travel_seconds, enabled)
+            VALUES (?, ?, ?, ?, ?)
+        """, rules)
+
+    # 3. Seed Demo Vehicle Registry
+    cursor.execute("SELECT COUNT(*) FROM vehicle_registry")
+    if cursor.fetchone()[0] == 0:
+        now_iso = datetime.now().isoformat()
+        registry_vehicles = [
+            ("TN01AB1234", "2021-04-12", "Tata", "Starbus", "WHITE", "bus", "DIESEL", "VALID", "VALID", "VALID", "DEMO_REGISTRY", 1, now_iso, now_iso),
+            ("MH12DE1433", "2020-08-19", "Hyundai", "Verna", "WHITE", "car", "DIESEL", "VALID", "VALID", "VALID", "DEMO_REGISTRY", 1, now_iso, now_iso),
+            ("KA01AB1234", "2019-11-03", "Tata", "Tiago", "BLUE", "car", "PETROL", "EXPIRED", "VALID", "VALID", "DEMO_REGISTRY", 1, now_iso, now_iso),
+            ("DL01XY9999", "2022-01-15", "Ashok Leyland", "Captain 2518", "YELLOW", "truck", "DIESEL", "VALID", "VALID", "VALID", "DEMO_REGISTRY", 1, now_iso, now_iso),
+            ("HR26DQ5555", "2018-05-20", "Tata", "Marcopolo", "ORANGE", "bus", "DIESEL", "VALID", "EXPIRED", "EXPIRED", "DEMO_REGISTRY", 1, now_iso, now_iso)
+        ]
+        cursor.executemany("""
+            INSERT INTO vehicle_registry (
+                plate, registration_date, manufacturer, model, colour,
+                vehicle_type, fuel_type, insurance_status, fitness_status,
+                pucc_status, source, is_demo, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, registry_vehicles)
+
+    # 4. Seed Demo Permits
+    cursor.execute("SELECT COUNT(*) FROM permits")
+    if cursor.fetchone()[0] == 0:
+        now_iso = datetime.now().isoformat()
+        permits_data = [
+            ("TN01AB1234", "SITE-BLR-01", json.dumps(["GATE_IN", "MATERIAL_YARD", "ACTIVE_ZONE", "GATE_OUT"]), "2024-01-01", "2027-12-31", "Material Delivery & Site Operations", "ACTIVE", 1, now_iso),
+            ("MH12DE1433", "SITE-BLR-01", json.dumps(["GATE_IN", "MATERIAL_YARD", "ACTIVE_ZONE", "GATE_OUT"]), "2024-01-01", "2027-12-31", "Supervisory Inspection Vehicle", "ACTIVE", 1, now_iso),
+            ("KA01AB1234", "SITE-BLR-01", json.dumps(["GATE_IN", "MATERIAL_YARD", "ACTIVE_ZONE", "GATE_OUT"]), "2024-01-01", "2025-01-01", "Subcontractor Supply (Expired)", "EXPIRED", 1, now_iso),
+            ("DL01XY9999", "SITE-BLR-01", json.dumps(["GATE_IN", "MATERIAL_YARD"]), "2024-01-01", "2027-12-31", "Bulk Aggregate Hauler (Restricted Zone)", "ACTIVE", 1, now_iso)
+        ]
+        cursor.executemany("""
+            INSERT INTO permits (
+                plate, site_id, allowed_zones, valid_from, valid_until,
+                purpose, status, is_demo, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, permits_data)
+
+    conn.commit()
+    conn.close()
+
+
+# ==================== VEHICLE REGISTRY OPERATIONS ====================
+
+def get_registry_record_by_plate(plate: str) -> Optional[Dict[str, Any]]:
+    """Retrieves vehicle record from demo vehicle registry by plate."""
+    if not plate:
+        return None
+    clean = plate.strip().upper().replace(" ", "").replace("-", "")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM vehicle_registry WHERE REPLACE(REPLACE(plate, ' ', ''), '-', '') = ? LIMIT 1", (clean,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
+def reset_demo_registry_data() -> int:
+    """Clears and re-seeds demo registry."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM vehicle_registry WHERE is_demo = 1")
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    seed_all_demo_data()
+    return count
+
+
+# ==================== PERMITS OPERATIONS ====================
+
+def get_permits_for_plate(plate: str) -> List[Dict[str, Any]]:
+    """Fetches all site permits associated with a license plate."""
+    if not plate:
+        return []
+    clean = plate.strip().upper().replace(" ", "").replace("-", "")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM permits WHERE REPLACE(REPLACE(plate, ' ', ''), '-', '') = ? ORDER BY id DESC", (clean,))
+    rows = cursor.fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["allowed_zones"] = json.loads(d.get("allowed_zones", "[]"))
+        except Exception:
+            d["allowed_zones"] = []
+        results.append(d)
+    return results
+
+def get_all_permits(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM permits ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["allowed_zones"] = json.loads(d.get("allowed_zones", "[]"))
+        except Exception:
+            d["allowed_zones"] = []
+        results.append(d)
+    return results
+
+
+# ==================== CAMERA ZONES & ROUTE RULES ====================
+
+def get_camera_zones() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM camera_zones ORDER BY camera_id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_route_rules() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM route_rules WHERE enabled = 1")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ==================== VEHICLE TRANSIT HISTORY ====================
+
+def record_vehicle_transit(
+    vehicle_id: str,
+    plate: Optional[str],
+    camera_id: str,
+    zone: str,
+    timestamp: str,
+    is_demo: bool = True
+) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO vehicle_transit_history (vehicle_id, plate, camera_id, zone, timestamp, is_demo)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (vehicle_id, plate, camera_id, zone, timestamp, 1 if is_demo else 0))
+    transit_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return transit_id
+
+def get_recent_transit_for_vehicle(vehicle_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM vehicle_transit_history 
+        WHERE vehicle_id = ? 
+        ORDER BY id DESC 
+        LIMIT ?
+    """, (vehicle_id, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ==================== ALERTS OPERATIONS ====================
+
+def insert_alert(
+    alert_type: str,
+    severity: str,
+    vehicle_id: Optional[str],
+    plate: Optional[str],
+    camera_id: str,
+    zone: str,
+    timestamp: str,
+    title: str,
+    reason: str,
+    action_required: str,
+    requires_manual_review: bool = True,
+    evidence_references: Optional[Dict[str, Any]] = None,
+    is_demo: bool = False
+) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    ev_json = json.dumps(evidence_references or {})
+    cursor.execute("""
+        INSERT INTO alerts (
+            alert_type, severity, vehicle_id, plate, camera_id, zone,
+            timestamp, title, reason, action_required, requires_manual_review,
+            evidence_json, review_status, is_demo, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+    """, (
+        alert_type, severity, vehicle_id, plate, camera_id, zone,
+        timestamp, title, reason, action_required,
+        1 if requires_manual_review else 0,
+        ev_json, 1 if is_demo else 0, datetime.now().isoformat()
+    ))
+    alert_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return alert_id
+
+def get_alerts(
+    limit: int = 50,
+    offset: int = 0,
+    plate: Optional[str] = None,
+    camera_id: Optional[str] = None,
+    zone: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    severity: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    query = "SELECT * FROM alerts WHERE 1=1"
+    params = []
+    if plate:
+        query += " AND plate LIKE ?"
+        params.append(f"%{plate.strip().upper()}%")
+    if camera_id:
+        query += " AND camera_id = ?"
+        params.append(camera_id)
+    if zone:
+        query += " AND zone = ?"
+        params.append(zone)
+    if alert_type:
+        query += " AND alert_type = ?"
+        params.append(alert_type)
+    if severity:
+        query += " AND severity = ?"
+        params.append(severity)
+    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+
+    cursor.execute(query, tuple(params))
+    rows = cursor.fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["evidence_references"] = json.loads(d.get("evidence_json", "{}"))
+        except Exception:
+            d["evidence_references"] = {}
+        d["requires_manual_review"] = bool(d.get("requires_manual_review", 1))
+        results.append(d)
+    return results
+
+def get_alert_by_id(alert_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        d = dict(row)
+        try:
+            d["evidence_references"] = json.loads(d.get("evidence_json", "{}"))
+        except Exception:
+            d["evidence_references"] = {}
+        d["requires_manual_review"] = bool(d.get("requires_manual_review", 1))
+        return d
+    return None
+
+def get_dashboard_summary_counts() -> Dict[str, int]:
+    """Computes real-time telemetry metrics for command center KPI cards."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM vehicle_identities")
+    active_vehicles = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM detections")
+    detections = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM identity_observations 
+        WHERE event_type IN ('POSSIBLE_IDENTITY_MISMATCH', 'POSSIBLE_PLATE_SWAP')
+    """)
+    identity_warnings = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM alerts 
+        WHERE alert_type IN ('PERMIT_EXPIRED', 'UNAUTHORIZED_ZONE', 'NO_SITE_PERMIT', 'UNKNOWN_VEHICLE')
+    """)
+    access_alerts = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM alerts WHERE alert_type = 'ROUTE_INTEGRITY_ANOMALY'")
+    route_alerts = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE status = 'PLATE_UNREADABLE'")
+    unreadable_plates = cursor.fetchone()[0]
+
+    conn.close()
+    return {
+        "active_vehicles": active_vehicles,
+        "detections": detections,
+        "identity_warnings": identity_warnings,
+        "access_alerts": access_alerts,
+        "route_alerts": route_alerts,
+        "unreadable_plates": unreadable_plates
+    }
+
+def get_latest_observations_by_camera() -> Dict[str, Any]:
+    """Returns the most recent vehicle detection event for each configured camera."""
+    from backend.config import CAMERAS
+    conn = get_connection()
+    cursor = conn.cursor()
+    results = {}
+    for cam_id, cfg in CAMERAS.items():
+        cursor.execute("""
+            SELECT * FROM detections 
+            WHERE camera_id = ? 
+            ORDER BY id DESC 
+            LIMIT 1
+        """, (cam_id,))
+        row = cursor.fetchone()
+        if row:
+            d = dict(row)
+            results[cam_id] = {
+                "camera_id": cam_id,
+                "camera_name": cfg.name,
+                "zone": cfg.zone,
+                "plate": d.get("plate") or d.get("raw_plate") or "NO_PLATE",
+                "vehicle_class": d.get("vehicle_class"),
+                "status": d.get("status"),
+                "frame_path": d.get("frame_path"),
+                "vehicle_crop_path": d.get("vehicle_crop_path"),
+                "plate_crop_path": d.get("plate_crop_path"),
+                "annotated_frame_path": d.get("annotated_frame_path"),
+                "timestamp": d.get("timestamp"),
+                "identity_event": d.get("identity_event")
+            }
+        else:
+            results[cam_id] = {
+                "camera_id": cam_id,
+                "camera_name": cfg.name,
+                "zone": cfg.zone,
+                "plate": "IDLE",
+                "vehicle_class": None,
+                "status": "IDLE",
+                "frame_path": None,
+                "vehicle_crop_path": None,
+                "plate_crop_path": None,
+                "annotated_frame_path": None,
+                "timestamp": None,
+                "identity_event": None
+            }
+    conn.close()
+    return results
+

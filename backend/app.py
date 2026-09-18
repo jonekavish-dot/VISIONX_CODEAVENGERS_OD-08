@@ -17,13 +17,16 @@ from fastapi import FastAPI, BackgroundTasks, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from fastapi.responses import FileResponse
 from backend.config import (
+    BASE_DIR,
     DEFAULT_DEMO_VIDEO,
     PROCESS_EVERY_N_FRAMES,
     CAMERAS,
     DEFAULT_CAMERA_ID,
     EVIDENCE_DIR,
-    DEMO_DIR
+    DEMO_DIR,
+    SCENARIOS_DIR
 )
 from backend.schemas.detection import (
     DetectionEvent,
@@ -44,7 +47,11 @@ from backend.database.database import (
     get_latest_identity_observation,
     get_identity_observation_by_id,
     get_vehicle_comparison,
-    reset_demo_data
+    reset_demo_data,
+    reset_demo_registry_data,
+    get_all_permits,
+    get_permits_for_plate,
+    get_latest_observations_by_camera
 )
 from backend.vehicle_identity.schemas import (
     VehicleIdentity,
@@ -55,9 +62,19 @@ from backend.vehicle_identity.schemas import (
     ScenarioStatusResponse,
     ScenarioStartRequest
 )
+from backend.vehicle_registry import VehicleRegistryService, VehicleRegistryRecord
+from backend.site_context import SiteContextService, SitePermit
+from backend.alerts import (
+    AlertService,
+    AlertItem,
+    VehicleTrustSnapshot,
+    DashboardSummary,
+    LiveCameraCard
+)
 from backend.demo.scenario_manager import ScenarioManager
 from backend.video.mp4_source import MP4Source
 from backend.services.frame_processor import FrameProcessor
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -191,7 +208,10 @@ class DemoRunner:
 # App Lifecycle
 frame_processor: Optional[FrameProcessor] = None
 demo_runner = DemoRunner()
-scenario_manager = ScenarioManager()
+registry_service = VehicleRegistryService()
+context_service = SiteContextService()
+alert_service = AlertService(registry_service=registry_service, context_service=context_service)
+scenario_manager = ScenarioManager(alert_service=alert_service)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -201,6 +221,7 @@ async def lifespan(app: FastAPI):
     # Initialize shared FrameProcessor
     frame_processor = FrameProcessor()
     scenario_manager.identity_service = frame_processor.identity_service
+    scenario_manager.alert_service = alert_service
     logger.info("IVACS V-TRACE frame processor and scenario manager initialized.")
     yield
     logger.info("Shutting down IVACS V-TRACE Backend...")
@@ -225,6 +246,9 @@ app.add_middleware(
 
 # Mount evidence directory for serving images directly to UI / judges
 app.mount("/evidence", StaticFiles(directory=str(EVIDENCE_DIR)), name="evidence")
+if SCENARIOS_DIR.exists():
+    app.mount("/scenarios", StaticFiles(directory=str(SCENARIOS_DIR)), name="scenarios")
+
 
 # 1. Health Endpoint
 @app.get("/api/health", response_model=HealthResponse)
@@ -368,3 +392,90 @@ def reset_demo_endpoint():
         "message": "Demo scenario data safely reset. Production records and database structure preserved.",
         "deleted_records": deleted_stats
     }
+
+# 19. Dashboard Summary Metrics Endpoint
+@app.get("/api/dashboard/summary", response_model=DashboardSummary)
+def get_dashboard_summary_endpoint():
+    return alert_service.get_dashboard_summary()
+
+# 20. Dashboard Live Camera Feeds Endpoint
+@app.get("/api/dashboard/live", response_model=Dict[str, LiveCameraCard])
+def get_dashboard_live_endpoint():
+    return get_latest_observations_by_camera()
+
+# 21. Vehicle Trust Snapshot Endpoint
+@app.get("/api/vehicles/{vehicle_id}/trust-snapshot", response_model=VehicleTrustSnapshot)
+def get_vehicle_trust_snapshot_endpoint(vehicle_id: str):
+    snapshot = alert_service.get_trust_snapshot(vehicle_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail=f"Trust snapshot for vehicle '{vehicle_id}' not found.")
+    return snapshot
+
+# 22. Security Alerts List Endpoint
+@app.get("/api/alerts", response_model=List[AlertItem])
+def get_alerts_endpoint(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    plate: Optional[str] = None,
+    camera_id: Optional[str] = None,
+    zone: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    severity: Optional[str] = None
+):
+    return alert_service.get_alerts(
+        limit=limit,
+        offset=offset,
+        plate=plate,
+        camera_id=camera_id,
+        zone=zone,
+        alert_type=alert_type,
+        severity=severity
+    )
+
+# 23. Single Alert By ID Endpoint
+@app.get("/api/alerts/{id}", response_model=AlertItem)
+def get_alert_by_id_endpoint(id: int):
+    al = alert_service.get_alert_by_id(id)
+    if not al:
+        raise HTTPException(status_code=404, detail=f"Alert with ID {id} not found.")
+    return al
+
+# 24. Vehicle Registry Lookup Endpoint
+@app.get("/api/registry/vehicle/{plate}", response_model=VehicleRegistryRecord)
+def get_registry_vehicle_endpoint(plate: str):
+    rec = registry_service.get_vehicle_by_plate(plate)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Plate '{plate}' not found in demo vehicle registry.")
+    return rec
+
+# 25. Reset Demo Vehicle Registry Endpoint
+@app.post("/api/demo/registry/reset")
+def reset_demo_registry_endpoint():
+    count = reset_demo_registry_data()
+    return {"status": "success", "message": "Demo vehicle registry reset to seed values.", "reseeded_records": count}
+
+# 26. Site Permits List Endpoint
+@app.get("/api/permits", response_model=List[SitePermit])
+def get_all_permits_endpoint(limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+    rows = get_all_permits(limit=limit, offset=offset)
+    return [SitePermit(**r) for r in rows]
+
+# 27. Single Vehicle Permit Endpoint
+@app.get("/api/permits/{plate}", response_model=List[SitePermit])
+def get_vehicle_permits_endpoint(plate: str):
+    rows = get_permits_for_plate(plate)
+    return [SitePermit(**r) for r in rows]
+
+# 28. Universal Media Asset Serving Endpoint
+@app.get("/api/media")
+def get_media_file(path: str = Query(..., description="File path to media image")):
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"Media file '{path}' not found.")
+    return FileResponse(path)
+
+# 29. Mount Frontend Command Center Web Application
+FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+
+

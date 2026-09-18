@@ -31,13 +31,22 @@ from backend.database.database import (
     get_vehicle_identity_by_id
 )
 
+from backend.alerts.alert_service import AlertService
+from backend.alerts.schemas import AlertType
+from backend.database.database import get_connection
+
 logger = logging.getLogger("vtrace.scenario_manager")
 
 class ScenarioManager:
     """State machine and runner for controlled hackathon identity scenarios."""
 
-    def __init__(self, identity_service: Optional[VehicleIdentityService] = None):
+    def __init__(
+        self,
+        identity_service: Optional[VehicleIdentityService] = None,
+        alert_service: Optional[AlertService] = None
+    ):
         self.identity_service = identity_service or VehicleIdentityService()
+        self.alert_service = alert_service or AlertService()
         self.current_scenario: Optional[str] = None
         self.step: int = 0
         self.total_steps: int = 2
@@ -46,6 +55,7 @@ class ScenarioManager:
         self.last_observation: Optional[IdentityObservation] = None
         self.last_comparison: Optional[VehicleComparisonResponse] = None
         self._lock = threading.Lock()
+
 
     def get_scenario_status(self) -> ScenarioStatusResponse:
         with self._lock:
@@ -78,6 +88,7 @@ class ScenarioManager:
             self.last_observation = None
             self.last_comparison = None
             self.identity_service.clear_cooldown()
+            self.alert_service.clear_cooldown()
             self.identity_service._refresh_cache()
             return stats
 
@@ -137,6 +148,30 @@ class ScenarioManager:
         )
         baseline_vehicle_id = res1.vehicle_id
 
+        # Record Step 1 detection event for live dashboard
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO detections (
+                    camera_id, zone, timestamp, frame_number, status,
+                    vehicle_class, vehicle_confidence, plate, raw_plate,
+                    plate_confidence, ocr_confidence,
+                    vehicle_crop_path, plate_crop_path, frame_path, annotated_frame_path,
+                    vehicle_id, visual_similarity, identity_event, identity_match_status, is_demo, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """, (
+                s1.camera_id, s1.zone, datetime.now().isoformat(), 101, "DETECTED",
+                s1.vehicle_class, 0.95, s1.observed_plate, s1.observed_plate,
+                s1.plate_confidence, s1.ocr_confidence,
+                s1.vehicle_image_path, s1.plate_image_path, s1.vehicle_image_path, s1.vehicle_image_path,
+                baseline_vehicle_id, 1.0, "NEW_VEHICLE", "NEW", datetime.now().isoformat()
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to record step 1 demo detection: {e}")
+
         with self._lock:
             self.step = 1
             self.message = f"Step 1 completed: Baseline registered ({baseline_vehicle_id})"
@@ -168,6 +203,32 @@ class ScenarioManager:
         )
 
         current_vehicle_id = res2.vehicle_id
+
+        # Record Step 2 detection event for live dashboard
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            status_str = "PLATE_UNREADABLE" if not s2.observed_plate else "DETECTED"
+            cursor.execute("""
+                INSERT INTO detections (
+                    camera_id, zone, timestamp, frame_number, status,
+                    vehicle_class, vehicle_confidence, plate, raw_plate,
+                    plate_confidence, ocr_confidence,
+                    vehicle_crop_path, plate_crop_path, frame_path, annotated_frame_path,
+                    vehicle_id, visual_similarity, identity_event, identity_match_status, is_demo, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """, (
+                s2.camera_id, s2.zone, datetime.now().isoformat(), 102, status_str,
+                s2.vehicle_class, 0.95, s2.observed_plate, s2.observed_plate,
+                s2.plate_confidence, s2.ocr_confidence,
+                s2.vehicle_image_path, s2.plate_image_path, s2.vehicle_image_path, s2.vehicle_image_path,
+                current_vehicle_id, res2.similarity, res2.event_type.value,
+                "MATCHED" if res2.matched else "UNMATCHED", datetime.now().isoformat()
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to record step 2 demo detection: {e}")
 
         # Fetch latest observation for response
         obs_list = get_identity_observations_for_vehicle(current_vehicle_id)
@@ -204,6 +265,44 @@ class ScenarioManager:
             ocr_confidence=s2.ocr_confidence
         )
 
+        # Trigger security alert if identity event or attribute mismatch warrants it
+        if res2.event_type == IdentityEventType.POSSIBLE_IDENTITY_MISMATCH:
+            self.alert_service.create_alert(
+                alert_type=AlertType.POSSIBLE_IDENTITY_MISMATCH.value,
+                camera_id=s2.camera_id,
+                zone=s2.zone,
+                plate=s2.observed_plate,
+                vehicle_id=current_vehicle_id,
+                similarity=res2.similarity,
+                details="Vehicle appearance deviates from registered record for plate.",
+                evidence_references=comparison.model_dump(),
+                is_demo=True
+            )
+        elif res2.event_type == IdentityEventType.POSSIBLE_PLATE_SWAP:
+            self.alert_service.create_alert(
+                alert_type=AlertType.POSSIBLE_PLATE_SWAP.value,
+                camera_id=s2.camera_id,
+                zone=s2.zone,
+                plate=s2.observed_plate,
+                vehicle_id=current_vehicle_id,
+                similarity=res2.similarity,
+                details="Visual fingerprint matches previously seen vehicle with different plate.",
+                evidence_references=comparison.model_dump(),
+                is_demo=True
+            )
+        elif res2.event_type == IdentityEventType.PLATE_UNREADABLE_VEHICLE_MATCH:
+            self.alert_service.create_alert(
+                alert_type=AlertType.PLATE_UNREADABLE_VEHICLE_MATCH.value,
+                camera_id=s2.camera_id,
+                zone=s2.zone,
+                plate="UNREADABLE",
+                vehicle_id=current_vehicle_id,
+                similarity=res2.similarity,
+                details="Plate unreadable; continuous tracking maintained via deep visual fingerprint.",
+                evidence_references=comparison.model_dump(),
+                is_demo=True
+            )
+
         with self._lock:
             self.step = 2
             self.status = ScenarioStatus.COMPLETED
@@ -213,3 +312,4 @@ class ScenarioManager:
 
         logger.info(f"Scenario '{norm_key}' completed: Event = {res2.event_type.value}, Sim = {res2.similarity:.3f}")
         return self.get_scenario_status()
+
