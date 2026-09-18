@@ -101,6 +101,45 @@ class FrameProcessor:
                 plate_result = self.plate_detector.detect_in_vehicle(frame, vehicle)
 
                 if not plate_result:
+                    # Preserve vehicle evidence and identity history even when
+                    # localization fails. A missing plate must not discard the
+                    # vehicle observation or its cropped image.
+                    prefix = f"{camera_id}_{timestamp_slug}_f{frame_number}_v{v_idx}"
+                    vehicle_crop_path = None
+                    frame_path = None
+                    annotated_path = None
+                    if save_evidence and vehicle_crop.size > 0:
+                        frame_path = str(EVIDENCE_DIR / f"{prefix}_frame.jpg")
+                        vehicle_crop_path = str(EVIDENCE_DIR / f"{prefix}_vehicle.jpg")
+                        annotated_path = str(EVIDENCE_DIR / f"{prefix}_annotated.jpg")
+                        try:
+                            cv2.imwrite(frame_path, frame)
+                            cv2.imwrite(vehicle_crop_path, vehicle_crop)
+                            self._draw_vehicle_box(annotated_frame, vx1, vy1, vx2, vy2, v_class, v_conf)
+                            cv2.imwrite(annotated_path, annotated_frame)
+                        except Exception as err:
+                            logger.error(f"Failed to save no-plate evidence images: {err}")
+
+                    id_result = None
+                    if self.identity_service and vehicle_crop.size > 0:
+                        try:
+                            id_result = self.identity_service.process_vehicle(
+                                vehicle_crop=vehicle_crop,
+                                observed_plate=None,
+                                plate_confidence=None,
+                                ocr_confidence=0.0,
+                                vehicle_class=v_class,
+                                camera_id=camera_id,
+                                zone=zone,
+                                frame_number=frame_number,
+                                timestamp=timestamp_iso,
+                                vehicle_crop_path=vehicle_crop_path,
+                                plate_crop_path=None,
+                                frame_path=frame_path
+                            )
+                        except Exception as id_err:
+                            logger.error(f"Error recording no-plate vehicle on frame {frame_number}: {id_err}")
+
                     # Clean failure handling: NO_PLATE
                     event = DetectionEvent(
                         camera_id=camera_id,
@@ -110,9 +149,23 @@ class FrameProcessor:
                         status=ProcessingStatus.NO_PLATE,
                         vehicle_class=v_class,
                         vehicle_confidence=v_conf,
-                        vehicle_bbox=[vx1, vy1, vx2, vy2]
+                        vehicle_bbox=[vx1, vy1, vx2, vy2],
+                        vehicle_crop_path=vehicle_crop_path,
+                        frame_path=frame_path,
+                        annotated_frame_path=annotated_path,
+                        vehicle_id=id_result.vehicle_id if id_result else None,
+                        visual_similarity=id_result.similarity if id_result else None,
+                        identity_event=id_result.event_type.value if id_result else None,
+                        identity_match_status=(
+                            "MATCHED" if id_result and id_result.matched
+                            else "UNMATCHED" if id_result else None
+                        )
                     )
                     self._draw_vehicle_box(annotated_frame, vx1, vy1, vx2, vy2, v_class, v_conf)
+                    try:
+                        insert_detection(event)
+                    except Exception as db_err:
+                        logger.error(f"Error persisting no-plate detection: {db_err}")
                     events.append(event)
                     continue
 

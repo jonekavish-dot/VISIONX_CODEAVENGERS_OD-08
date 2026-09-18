@@ -45,9 +45,10 @@ class YouTubeSource(VideoSource):
             self.last_error = YOUTUBE_STREAM_UNAVAILABLE
             return None
 
-        # Practical format selection: prioritize lightweight 720p/480p streams for fast edge inference
+        # Prefer one muxed stream. OpenCV cannot combine the separate audio/video
+        # URLs returned by yt-dlp's bestvideo+bestaudio selector.
         ydl_opts = {
-            "format": "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best",
+            "format": "best[height<=720][vcodec!=none][acodec!=none]/best[height<=720]/best",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -93,7 +94,7 @@ class YouTubeSource(VideoSource):
 
         except Exception as e:
             logger.warning(f"Failed to extract stream from YouTube URL '{self.source_uri}': {e}")
-            self.last_error = YOUTUBE_STREAM_UNAVAILABLE
+            self.last_error = f"{YOUTUBE_STREAM_UNAVAILABLE}: {str(e)[:240]}"
             return None
 
     def open(self) -> bool:
@@ -102,7 +103,7 @@ class YouTubeSource(VideoSource):
         """
         if not self.source_uri:
             self.is_opened = False
-            self.last_error = YOUTUBE_STREAM_UNAVAILABLE
+            self.last_error = "YOUTUBE_STREAM_UNAVAILABLE: OpenCV could not open the extracted media stream"
             return False
 
         stream_url = self.extract_stream_url()
