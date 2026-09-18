@@ -208,6 +208,11 @@ class DemoRunner:
 
 
 # App Lifecycle
+# RouteIntegrityChecker is constructed by SiteContextService below and reads
+# route_rules during initialization. Ensure the schema exists before creating
+# application-wide services; lifespan initialization happens too late for that.
+init_db()
+
 frame_processor: Optional[FrameProcessor] = None
 demo_runner = DemoRunner()
 registry_service = VehicleRegistryService()
@@ -539,5 +544,4 @@ def get_youtube_stream_latest():
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
-
 
