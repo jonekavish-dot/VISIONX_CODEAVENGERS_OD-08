@@ -31,6 +31,11 @@ VEHICLE_CONF_THRESHOLD = float(os.getenv("VEHICLE_CONF_THRESHOLD", "0.40"))
 PLATE_CONF_THRESHOLD = float(os.getenv("PLATE_CONF_THRESHOLD", "0.30"))
 OCR_CONF_THRESHOLD = float(os.getenv("OCR_CONF_THRESHOLD", "0.30"))
 
+# Vehicle Visual Fingerprint Engine (Demo Calibration Thresholds)
+# NOTE: These are empirical demo calibration thresholds, not claimed accuracy figures.
+IDENTITY_HIGH_THRESHOLD = float(os.getenv("IDENTITY_HIGH_THRESHOLD", "0.85"))
+IDENTITY_LOW_THRESHOLD = float(os.getenv("IDENTITY_LOW_THRESHOLD", "0.60"))
+
 # Target Vehicle Classes (COCO indices: 2=car, 3=motorcycle, 5=bus, 7=truck)
 TARGET_VEHICLE_CLASSES = ["car", "truck", "bus", "motorcycle"]
 

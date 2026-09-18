@@ -26,31 +26,35 @@ VIDEO STREAM (MP4 / RTSP / Webcam)
               ▼
    YOLOv8 Vehicle Detector (Car, Truck, Bus, Motorcycle)
               │
-              ▼
-   License Plate Detector (Bumper ROI & Morphological Analysis)
-              │
-              ▼
-   Plate Crop & CLAHE Preprocessing
-              │
-              ▼
-   EasyOCR Engine (Raw OCR text + Disciplined Plate Normalization)
-              │
-              ▼
-   Structured DetectionEvent (Vehicle + Plate Association)
-              │
-     ┌────────┴───────────────────────────┐
-     ▼                                    ▼
-SQLite Database (vtrace.db)       Evidence Store (data/evidence/)
-                                  - current_frame.jpg
-                                  - vehicle_crop.jpg
-                                  - plate_crop.jpg
-                                  - annotated_frame.jpg
+              ├─────────────────────────────────────────────────┐
+              ▼                                                 ▼
+   License Plate Detector (Bumper ROI)           ResNet18 Feature Extractor
+              │                                  (512-dim Normalized Embedding)
+              ▼                                                 │
+   EasyOCR Engine (Slot Normalization)                          │
+              │                                                 │
+              └───────────────────────┬─────────────────────────┘
+                                      ▼
+                       Vehicle Identity Service
+                    (Cosine Similarity & Rules A-E)
+                                      │
+                                      ▼
+                   Structured DetectionEvent & IdentityEvent
+                                      │
+     ┌────────────────────────────────┴───────────────────┐
+     ▼                                                    ▼
+SQLite Database (vtrace.db)                     Evidence Store (data/evidence/)
+- detections                                    - current_frame.jpg
+- vehicle_identities                            - vehicle_crop.jpg
+- identity_observations                         - plate_crop.jpg
+                                                - annotated_frame.jpg
 ```
 
 ---
 
 ## 🛡️ AI & Privacy Policy Compliance
-* **Zero Generative AI / LLM at Runtime:** Strictly adheres to OD-08 problem statement rules. All vehicle detection, plate localization, and OCR character extraction run natively using classical computer vision (`OpenCV`), lightweight neural network (`YOLOv8`), and optical character recognition (`EasyOCR`).
+* **Zero Generative AI / LLM at Runtime:** Strictly adheres to OD-08 problem statement rules. All vehicle detection, plate localization, OCR character extraction, and visual fingerprinting run natively using classical computer vision (`OpenCV`), lightweight neural networks (`YOLOv8n`, `ResNet18`), and optical character recognition (`EasyOCR`).
+* **Honest Detection Policy:** Never claims unverified model certainty; analytical alerts use precise qualifiers such as `POSSIBLE_IDENTITY_MISMATCH` and `POSSIBLE_PLATE_SWAP`.
 * No external API calls to OpenAI, Gemini, Claude, or third-party cloud LLMs.
 
 ---
@@ -59,12 +63,12 @@ SQLite Database (vtrace.db)       Evidence Store (data/evidence/)
 
 ### 1. Installation
 ```bash
-pip install opencv-python ultralytics easyocr fastapi uvicorn reportlab pytest
+pip install opencv-python ultralytics easyocr fastapi uvicorn reportlab pytest torchvision torch
 ```
 
-### 2. Run Automated Tests (All 7 Core Areas)
+### 2. Run Automated Tests (All 14 Unit & Integration Tests)
 ```bash
-python -m pytest tests/test_vtrace.py -v
+python -m pytest tests/ -v
 ```
 
 ### 3. Generate CCTV Demo Video
@@ -85,7 +89,7 @@ Interactive API documentation will be available at: `http://localhost:8000/docs`
 
 ### 5. Run Live Verification
 ```bash
-python verify_demo.py
+python verify_identity_api.py
 ```
 
 ---
@@ -101,6 +105,11 @@ python verify_demo.py
 | `GET` | `/api/demo/status` | Real-time demo metrics: current frame, total frames, FPS, detection count |
 | `GET` | `/api/detections` | Paginated list of all stored detection events from SQLite |
 | `GET` | `/api/detections/latest` | Most recent vehicle & license plate detection event |
+| `GET` | `/api/vehicles` | List of all registered vehicle identities with visit counts & canonical plates |
+| `GET` | `/api/vehicles/{vehicle_id}` | Detailed vehicle record by ID with active status and first/last seen timestamps |
+| `GET` | `/api/vehicles/{vehicle_id}/history` | Historical timeline of all visual observations and sightings for a vehicle |
+| `GET` | `/api/identity-events` | Feed of identity match events with decision rules (Rules A-E) and similarity scores |
+| `GET` | `/api/identity-events/latest` | Most recent identity match decision event |
 | `GET` | `/evidence/{filename}` | Direct static HTTP access to saved evidence frames and crops |
 
 ---

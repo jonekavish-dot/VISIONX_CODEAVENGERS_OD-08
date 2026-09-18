@@ -34,6 +34,11 @@ class DetectionEvent(BaseModel):
     plate_crop_path: Optional[str] = None
     frame_path: Optional[str] = None
     annotated_frame_path: Optional[str] = None
+    # Vehicle Identity Extension Fields
+    vehicle_id: Optional[str] = None
+    visual_similarity: Optional[float] = None
+    identity_event: Optional[str] = None
+    identity_match_status: Optional[str] = None
     created_at: Optional[str] = Field(default_factory=lambda: datetime.now().isoformat())
 
 class DetectionListResponse(BaseModel):

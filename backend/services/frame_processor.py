@@ -17,6 +17,8 @@ from backend.detection.plate_detector import PlateDetector
 from backend.ocr.plate_ocr import PlateOCR
 from backend.database.database import insert_detection
 
+from backend.vehicle_identity.identity_service import VehicleIdentityService
+
 logger = logging.getLogger("vtrace.frame_processor")
 
 class FrameProcessor:
@@ -26,11 +28,13 @@ class FrameProcessor:
         self,
         vehicle_detector: Optional[VehicleDetector] = None,
         plate_detector: Optional[PlateDetector] = None,
-        ocr_engine: Optional[PlateOCR] = None
+        ocr_engine: Optional[PlateOCR] = None,
+        identity_service: Optional[VehicleIdentityService] = None
     ):
         self.vehicle_detector = vehicle_detector or VehicleDetector()
         self.plate_detector = plate_detector or PlateDetector()
         self.ocr_engine = ocr_engine or PlateOCR()
+        self.identity_service = identity_service or VehicleIdentityService()
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
     def process_frame(
@@ -158,7 +162,33 @@ class FrameProcessor:
                     except Exception as err:
                         logger.error(f"Failed to save evidence images: {err}")
 
-                # 6. STRUCTURED DETECTION EVENT
+                # 6. VEHICLE VISUAL FINGERPRINT & IDENTITY MATCHING
+                id_result = None
+                if self.identity_service and vehicle_crop.size > 0:
+                    try:
+                        id_result = self.identity_service.process_vehicle(
+                            vehicle_crop=vehicle_crop,
+                            observed_plate=norm_plate or raw_plate,
+                            plate_confidence=plate_conf,
+                            ocr_confidence=ocr_conf,
+                            vehicle_class=v_class,
+                            camera_id=camera_id,
+                            zone=zone,
+                            frame_number=frame_number,
+                            timestamp=timestamp_iso,
+                            vehicle_crop_path=vehicle_crop_path,
+                            plate_crop_path=plate_crop_path,
+                            frame_path=frame_path
+                        )
+                    except Exception as id_err:
+                        logger.error(f"Error in identity service on frame {frame_number}: {id_err}")
+
+                v_id = id_result.vehicle_id if id_result else None
+                v_sim = id_result.similarity if id_result else None
+                v_evt = id_result.event_type.value if id_result else None
+                v_match = "MATCHED" if (id_result and id_result.matched) else ("UNMATCHED" if id_result else None)
+
+                # 7. STRUCTURED DETECTION EVENT
                 event = DetectionEvent(
                     camera_id=camera_id,
                     zone=zone,
@@ -176,7 +206,11 @@ class FrameProcessor:
                     vehicle_crop_path=vehicle_crop_path,
                     plate_crop_path=plate_crop_path,
                     frame_path=frame_path,
-                    annotated_frame_path=annotated_path
+                    annotated_frame_path=annotated_path,
+                    vehicle_id=v_id,
+                    visual_similarity=v_sim,
+                    identity_event=v_evt,
+                    identity_match_status=v_match
                 )
 
                 # 7. PERSIST TO SQLITE

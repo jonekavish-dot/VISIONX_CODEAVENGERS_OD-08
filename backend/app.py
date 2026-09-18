@@ -7,7 +7,7 @@ import os
 import time
 import logging
 import threading
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
 
 import cv2
@@ -36,7 +36,18 @@ from backend.database.database import (
     init_db,
     get_all_detections,
     get_latest_detection,
-    get_total_detections_count
+    get_total_detections_count,
+    get_all_vehicle_identities,
+    get_vehicle_identity_by_id,
+    get_identity_observations_for_vehicle,
+    get_all_identity_observations,
+    get_latest_identity_observation
+)
+from backend.vehicle_identity.schemas import (
+    VehicleIdentity,
+    IdentityObservation,
+    VehicleIdentityListResponse,
+    IdentityObservationListResponse
 )
 from backend.video.mp4_source import MP4Source
 from backend.services.frame_processor import FrameProcessor
@@ -267,3 +278,34 @@ def get_demo_status():
 @app.get("/api/cameras")
 def get_cameras():
     return list(CAMERAS.values())
+
+# 8. Vehicle Identities List Endpoint
+@app.get("/api/vehicles", response_model=VehicleIdentityListResponse)
+def get_vehicles():
+    identities = get_all_vehicle_identities()
+    return VehicleIdentityListResponse(total=len(identities), vehicles=identities)
+
+# 9. Single Vehicle Identity Endpoint
+@app.get("/api/vehicles/{vehicle_id}", response_model=VehicleIdentity)
+def get_vehicle(vehicle_id: str):
+    identity = get_vehicle_identity_by_id(vehicle_id)
+    if not identity:
+        raise HTTPException(status_code=404, detail=f"Vehicle identity '{vehicle_id}' not found.")
+    return identity
+
+# 10. Vehicle Observation History Endpoint
+@app.get("/api/vehicles/{vehicle_id}/history", response_model=List[IdentityObservation])
+def get_vehicle_history(vehicle_id: str):
+    observations = get_identity_observations_for_vehicle(vehicle_id)
+    return observations
+
+# 11. Identity Events List Endpoint
+@app.get("/api/identity-events", response_model=IdentityObservationListResponse)
+def get_identity_events(limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+    items = get_all_identity_observations(limit=limit, offset=offset)
+    return IdentityObservationListResponse(total=len(items), observations=items)
+
+# 12. Latest Identity Event Endpoint
+@app.get("/api/identity-events/latest", response_model=Optional[IdentityObservation])
+def get_latest_identity_event():
+    return get_latest_identity_observation()
