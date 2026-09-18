@@ -485,6 +485,7 @@ class YouTubeStreamStartRequest(BaseModel):
     url: str
 
 @app.post("/api/live/youtube/start")
+@app.post("/api/live/youtube/start/")
 def start_youtube_stream(req: YouTubeStreamStartRequest):
     if not req.url or not req.url.strip():
         raise HTTPException(status_code=400, detail="A valid YouTube live stream URL is required.")
@@ -497,14 +498,17 @@ def start_youtube_stream(req: YouTubeStreamStartRequest):
     return res
 
 @app.post("/api/live/youtube/stop")
+@app.post("/api/live/youtube/stop/")
 def stop_youtube_stream():
     return youtube_stream_manager.stop()
 
 @app.get("/api/live/youtube/status")
+@app.get("/api/live/youtube/status/")
 def get_youtube_stream_status():
     return youtube_stream_manager.get_status()
 
 @app.get("/api/live/youtube/frame")
+@app.get("/api/live/youtube/frame/")
 def get_youtube_stream_frame():
     jpeg_bytes = youtube_stream_manager.get_latest_frame_jpeg()
     if not jpeg_bytes:
@@ -518,6 +522,7 @@ def get_youtube_stream_frame():
     return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 @app.get("/api/live/youtube/latest")
+@app.get("/api/live/youtube/latest/")
 def get_youtube_stream_latest():
     status_info = youtube_stream_manager.get_status()
     latest_evt = youtube_stream_manager.get_latest_event()
