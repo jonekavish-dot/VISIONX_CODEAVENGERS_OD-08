@@ -1,21 +1,40 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
+async function apiFetch(path, options) {
+  const response = await fetch(apiUrl(path), options);
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const body = await response.text();
+    throw new Error(
+      `API returned ${response.status} ${response.statusText} instead of JSON` +
+      (body ? `: ${body.slice(0, 160)}` : '')
+    );
+  }
+  return response;
+}
+
 // Safe image helper to prevent broken images
 function getImageUrl(path) {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  if (path.startsWith('/evidence') || path.startsWith('/scenarios')) return path;
+  if (path.startsWith('/evidence') || path.startsWith('/scenarios')) return apiUrl(path);
   // Convert Windows backslashes
   const cleanPath = path.replace(/\\/g, '/');
   if (cleanPath.includes('/data/evidence/')) {
     const filename = cleanPath.split('/data/evidence/').pop();
-    return `/evidence/${filename}`;
+    return apiUrl(`/evidence/${filename}`);
   }
   if (cleanPath.includes('/data/demo/scenarios/')) {
     const subpath = cleanPath.split('/data/demo/scenarios/').pop();
-    return `/scenarios/${subpath}`;
+    return apiUrl(`/scenarios/${subpath}`);
   }
-  return `/api/media?path=${encodeURIComponent(path)}`;
+  return apiUrl(`/api/media?path=${encodeURIComponent(path)}`);
 }
 
 export default function App() {
@@ -64,7 +83,7 @@ export default function App() {
     let interval = null;
     const fetchYoutubeStatus = async () => {
       try {
-        const res = await fetch('/api/live/youtube/status');
+        const res = await apiFetch('/api/live/youtube/status');
         if (res.ok) {
           const data = await res.json();
           setYoutubeStatus(data);
@@ -89,7 +108,7 @@ export default function App() {
     setIsYoutubeLoading(true);
     setYoutubeStatus(prev => ({ ...prev, status: 'CONNECTING', last_error: null }));
     try {
-      const res = await fetch('/api/live/youtube/start', {
+      const res = await apiFetch('/api/live/youtube/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: youtubeUrl.trim() })
@@ -118,7 +137,7 @@ export default function App() {
   const handleStopYoutube = async () => {
     setIsYoutubeLoading(true);
     try {
-      await fetch('/api/live/youtube/stop', { method: 'POST' });
+      await apiFetch('/api/live/youtube/stop', { method: 'POST' });
       setYoutubeStatus(prev => ({ ...prev, status: 'OFFLINE' }));
     } catch (err) {
       console.error('Error stopping YouTube stream:', err);
@@ -130,7 +149,7 @@ export default function App() {
   // 1. Fetch Health Status
   const fetchHealth = useCallback(async () => {
     try {
-      const res = await fetch('/api/health');
+      const res = await apiFetch('/api/health');
       if (res.ok) {
         const data = await res.json();
         setHealth(data);
@@ -146,15 +165,15 @@ export default function App() {
   const fetchDashboardData = useCallback(async () => {
     try {
       // Summary
-      const sumRes = await fetch('/api/dashboard/summary');
+      const sumRes = await apiFetch('/api/dashboard/summary');
       if (sumRes.ok) setSummary(await sumRes.json());
 
       // Live Cameras
-      const liveRes = await fetch('/api/dashboard/live');
+      const liveRes = await apiFetch('/api/dashboard/live');
       if (liveRes.ok) setLiveCameras(await liveRes.json());
 
       // Latest Detection
-      const detRes = await fetch('/api/detections/latest');
+      const detRes = await apiFetch('/api/detections/latest');
       if (detRes.ok) {
         const detData = await detRes.json();
         setLatestDetection(detData);
@@ -164,7 +183,7 @@ export default function App() {
       let alertUrl = '/api/alerts?limit=15';
       if (alertFilter.severity) alertUrl += `&severity=${alertFilter.severity}`;
       if (alertFilter.type) alertUrl += `&alert_type=${alertFilter.type}`;
-      const alertRes = await fetch(alertUrl);
+      const alertRes = await apiFetch(alertUrl);
       if (alertRes.ok) setAlerts(await alertRes.json());
 
     } catch (err) {
@@ -188,7 +207,7 @@ export default function App() {
     setIsRunningScenario(true);
     setActiveScenarioName(scenarioName);
     try {
-      const res = await fetch('/api/demo/scenario/start', {
+      const res = await apiFetch('/api/demo/scenario/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario: scenarioName })
@@ -211,7 +230,7 @@ export default function App() {
   // 4. Demo Reset
   const handleResetDemo = async () => {
     try {
-      await fetch('/api/demo/reset', { method: 'POST' });
+      await apiFetch('/api/demo/reset', { method: 'POST' });
       setComparisonModal(null);
       setHistoryModal(null);
       setScenarioStatus(null);
@@ -224,7 +243,7 @@ export default function App() {
   // 5. Open Vehicle Comparison View
   const openComparisonForVehicle = async (vehicleId) => {
     try {
-      const res = await fetch(`/api/vehicles/${vehicleId}/comparison`);
+      const res = await apiFetch(`/api/vehicles/${vehicleId}/comparison`);
       if (res.ok) {
         const compData = await res.json();
         setComparisonModal(compData);
@@ -239,7 +258,7 @@ export default function App() {
   // 6. Open Vehicle Observation History
   const openHistoryForVehicle = async (vehicleId) => {
     try {
-      const res = await fetch(`/api/vehicles/${vehicleId}/history`);
+      const res = await apiFetch(`/api/vehicles/${vehicleId}/history`);
       if (res.ok) {
         const historyData = await res.json();
         setHistoryModal({ vehicleId, records: historyData });
@@ -252,7 +271,7 @@ export default function App() {
   // 7. Open Demo Registry Modal
   const openRegistryModal = async (plate) => {
     try {
-      const res = await fetch(`/api/registry/vehicle/${encodeURIComponent(plate || 'TN01AB1234')}`);
+      const res = await apiFetch(`/api/registry/vehicle/${encodeURIComponent(plate || 'TN01AB1234')}`);
       if (res.ok) {
         const regData = await res.json();
         setRegistryModal(regData);
@@ -521,7 +540,7 @@ export default function App() {
             <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-1 lg:grid-cols-3 gap-4 items-center">
               <div className="lg:col-span-2 relative bg-black rounded-lg overflow-hidden border border-slate-800 aspect-video flex items-center justify-center">
                 <img
-                  src={`/api/live/youtube/frame?t=${youtubeFrameTs}`}
+                  src={apiUrl(`/api/live/youtube/frame?t=${youtubeFrameTs}`)}
                   alt="Live Internet Camera"
                   className="w-full h-full object-contain"
                 />
