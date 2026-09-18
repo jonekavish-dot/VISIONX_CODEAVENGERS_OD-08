@@ -54,6 +54,27 @@ class PlateOCR:
         filtered = cv2.bilateralFilter(enhanced, 7, 50, 50)
         return filtered
 
+    def _preprocess_variants(self, plate_crop: np.ndarray) -> list:
+        """Return complementary crops for white, yellow, shadowed, and blurred plates."""
+        if plate_crop is None or plate_crop.size == 0:
+            return []
+        h, w = plate_crop.shape[:2]
+        scale = max(3.0, 160.0 / max(1, h), 320.0 / max(1, w))
+        resized = cv2.resize(
+            plate_crop,
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            interpolation=cv2.INTER_CUBIC
+        )
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY) if resized.ndim == 3 else resized
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(gray)
+        denoised = cv2.bilateralFilter(clahe, 5, 35, 35)
+        otsu = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        adaptive = cv2.adaptiveThreshold(
+            denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 31, 7
+        )
+        return [resized, denoised, otsu, adaptive]
+
     def recognize(self, plate_crop: np.ndarray) -> Dict[str, Any]:
         """
         Extracts license plate text from ROI.
@@ -74,52 +95,43 @@ class PlateOCR:
             }
 
         try:
-            processed = self.preprocess_plate(plate_crop)
-            # EasyOCR detail=1 returns list of (bbox, text, conf)
-            results = self.reader.readtext(processed, detail=1, paragraph=False)
+            candidates = []
+            for variant in self._preprocess_variants(plate_crop):
+                # Restrict OCR to registration characters. This removes common
+                # background detections from vehicle bumpers and signs.
+                results = self.reader.readtext(
+                    variant,
+                    detail=1,
+                    paragraph=False,
+                    allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                )
+                if not results:
+                    continue
+                results.sort(key=lambda item: item[0][0][0])
+                pieces = [item[1].strip() for item in results if item[1].strip()]
+                confidences = [float(item[2]) for item in results if item[1].strip()]
+                if pieces:
+                    raw_text = " ".join(pieces)
+                    avg_confidence = float(np.mean(confidences))
+                    normalized = self._normalize_plate(raw_text, avg_confidence)
+                    # Prefer a structurally valid Indian registration over a
+                    # higher-confidence noise result.
+                    quality = (2.0 if normalized else 0.0) + avg_confidence
+                    candidates.append((quality, raw_text, avg_confidence, normalized))
 
-            if not results:
-                # Try reading original crop if preprocessed produced nothing
-                results = self.reader.readtext(plate_crop, detail=1, paragraph=False)
-
-            if not results:
+            if not candidates:
                 return {
                     "raw_text": "",
                     "normalized_text": None,
                     "ocr_confidence": 0.0
                 }
 
-            # Concatenate pieces in spatial left-to-right order
-            # Sort by horizontal coordinate
-            results.sort(key=lambda item: item[0][0][0])
-
-            raw_pieces = []
-            confidences = []
-
-            for item in results:
-                text_piece = item[1].strip()
-                conf = float(item[2])
-                if text_piece:
-                    raw_pieces.append(text_piece)
-                    confidences.append(conf)
-
-            if not raw_pieces:
-                return {
-                    "raw_text": "",
-                    "normalized_text": None,
-                    "ocr_confidence": 0.0
-                }
-
-            raw_text = " ".join(raw_pieces)
-            avg_confidence = round(float(np.mean(confidences)), 3)
-
-            # Normalization
-            normalized_text = self._normalize_plate(raw_text, avg_confidence)
+            _, raw_text, avg_confidence, normalized_text = max(candidates, key=lambda item: item[0])
 
             return {
                 "raw_text": raw_text,
                 "normalized_text": normalized_text,
-                "ocr_confidence": avg_confidence
+                "ocr_confidence": round(avg_confidence, 3)
             }
 
         except Exception as e:
@@ -137,15 +149,16 @@ class PlateOCR:
         If OCR confidence is too low or plate format is fundamentally unreadable,
         returns None rather than hallucinating.
         """
-        if confidence < self.conf_thresh:
-            return None
+        # A structurally valid Indian plate is useful even when CCTV quality
+        # lowers EasyOCR confidence. Invalid short strings remain rejected.
+        minimum_confidence = max(0.15, self.conf_thresh * 0.60)
 
         # Step 1: Search for Indian license plate pattern within raw text (ignoring noise tokens like 'IND', 'Ui em')
         plate_pattern = r'([A-Z]{2})[\s\-]*([0-9OD]{2})[\s\-]*([A-Z]{1,2})[\s\-]*([0-9OISZB]{4})'
         pattern_match = re.search(plate_pattern, raw_text.upper())
         if pattern_match:
             state, rto, series, num = pattern_match.groups()
-            if state in self.INDIAN_STATE_CODES:
+            if state in self.INDIAN_STATE_CODES and confidence >= minimum_confidence:
                 digit_map = {'O': '0', 'D': '0', 'I': '1', 'S': '5', 'Z': '2', 'B': '8'}
                 clean_rto = ''.join(digit_map.get(c, c) for c in rto)
                 clean_num = ''.join(digit_map.get(c, c) for c in num)
@@ -161,7 +174,7 @@ class PlateOCR:
             cleaned = cleaned[2:]
         
         # Valid vehicle registration strings typically have between 4 and 11 alphanumeric characters
-        if len(cleaned) < 4 or len(cleaned) > 12:
+        if confidence < minimum_confidence or len(cleaned) < 4 or len(cleaned) > 12:
             return None
 
         # Pattern 2: Cleaned Indian Format
