@@ -13,11 +13,12 @@ from contextlib import asynccontextmanager
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, BackgroundTasks, Query, HTTPException
+from fastapi import FastAPI, BackgroundTasks, Query, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from backend.video.youtube_manager import youtube_stream_manager
 from backend.config import (
     BASE_DIR,
     DEFAULT_DEMO_VIDEO,
@@ -144,10 +145,11 @@ class DemoRunner:
     def _run_pipeline(self, video_path: str, camera_id: str):
         logger.info(f"DemoRunner started on {video_path} (Camera: {camera_id})")
         
-        if not os.path.exists(video_path):
+        is_url = video_path.startswith(("http://", "https://", "rtsp://"))
+        if not is_url and not os.path.exists(video_path):
             with self.lock:
                 self.is_running = False
-                self.message = f"Error: Demo video not found at '{video_path}'. Please place MP4 in data/demo/."
+                self.message = f"Error: Video source not found at '{video_path}'."
             logger.error(self.message)
             return
 
@@ -155,7 +157,7 @@ class DemoRunner:
         if not source.open():
             with self.lock:
                 self.is_running = False
-                self.message = f"Failed to open video file: {video_path}"
+                self.message = f"Failed to connect to video stream: {video_path}"
             return
 
         with self.lock:
@@ -227,6 +229,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down IVACS V-TRACE Backend...")
     demo_runner.stop()
     scenario_manager.stop_scenario()
+    youtube_stream_manager.stop()
 
 app = FastAPI(
     title="IVACS V-TRACE API",
@@ -282,10 +285,11 @@ def start_demo(
     camera_id: str = DEFAULT_CAMERA_ID
 ):
     target_path = video_path or DEFAULT_DEMO_VIDEO
-    if not os.path.exists(target_path):
+    is_url = target_path.startswith(("http://", "https://", "rtsp://"))
+    if not is_url and not os.path.exists(target_path):
         raise HTTPException(
             status_code=404,
-            detail=f"Demo video not found at '{target_path}'. Please place MP4 in data/demo/construction_site.mp4"
+            detail=f"Video source not found at '{target_path}'. Please provide an existing file path or live RTSP/HTTP URL."
         )
 
     started = demo_runner.start(video_path=target_path, camera_id=camera_id)
@@ -473,7 +477,60 @@ def get_media_file(path: str = Query(..., description="File path to media image"
         raise HTTPException(status_code=404, detail=f"Media file '{path}' not found.")
     return FileResponse(path)
 
-# 29. Mount Frontend Command Center Web Application
+# ==========================================================
+# PUBLIC YOUTUBE LIVESTREAM ENDPOINTS (LIVE INTERNET CAMERA)
+# ==========================================================
+
+class YouTubeStreamStartRequest(BaseModel):
+    url: str
+
+@app.post("/api/live/youtube/start")
+def start_youtube_stream(req: YouTubeStreamStartRequest):
+    if not req.url or not req.url.strip():
+        raise HTTPException(status_code=400, detail="A valid YouTube live stream URL is required.")
+    
+    res = youtube_stream_manager.start(
+        url=req.url.strip(),
+        frame_processor=frame_processor,
+        alert_service=alert_service
+    )
+    return res
+
+@app.post("/api/live/youtube/stop")
+def stop_youtube_stream():
+    return youtube_stream_manager.stop()
+
+@app.get("/api/live/youtube/status")
+def get_youtube_stream_status():
+    return youtube_stream_manager.get_status()
+
+@app.get("/api/live/youtube/frame")
+def get_youtube_stream_frame():
+    jpeg_bytes = youtube_stream_manager.get_latest_frame_jpeg()
+    if not jpeg_bytes:
+        placeholder = np.zeros((360, 640, 3), dtype=np.uint8)
+        st = youtube_stream_manager.status
+        cv2.putText(placeholder, f"STREAM: {st}", (40, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+        cv2.putText(placeholder, "PUBLIC INTERNET STREAM", (40, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 2)
+        cv2.putText(placeholder, "(Not Construction Site CCTV)", (40, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+        _, buf = cv2.imencode(".jpg", placeholder)
+        jpeg_bytes = buf.tobytes()
+    return Response(content=jpeg_bytes, media_type="image/jpeg")
+
+@app.get("/api/live/youtube/latest")
+def get_youtube_stream_latest():
+    status_info = youtube_stream_manager.get_status()
+    latest_evt = youtube_stream_manager.get_latest_event()
+    return {
+        "status": status_info["status"],
+        "title": status_info["title"],
+        "is_live": status_info["is_live"],
+        "stream_type": status_info["stream_type"],
+        "label": status_info["label"],
+        "latest_event": latest_evt
+    }
+
+# 34. Mount Frontend Command Center Web Application
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")

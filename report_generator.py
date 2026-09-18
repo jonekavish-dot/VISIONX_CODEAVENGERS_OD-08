@@ -179,7 +179,7 @@ def generate_report():
         ],
         [
             Paragraph("<b>Team:</b> CodeAvengers", body_style),
-            Paragraph("<b>Evaluation Status:</b> DEMO READY (37/37 Tests Pass)", body_style),
+            Paragraph("<b>Evaluation Status:</b> DEMO READY (42/42 Tests Pass)", body_style),
             Paragraph("<b>Git Branch:</b> <code>main</code> (Synced Remote)", body_style)
         ]
     ]
@@ -198,6 +198,7 @@ def generate_report():
 
     subsystems = [
         ("Video Ingestion Engine", "backend/video/", "MP4, RTSP, Webcam stream abstraction with configurable frame decimation", "PASS"),
+        ("YouTube Live Stream Engine", "backend/video/youtube_source.py", "yt-dlp live stream extraction, public traffic cam ingestion & CV processing", "PASS"),
         ("Vehicle Detection Engine", "backend/detection/vehicle_detector.py", "Ultralytics YOLOv8n inference filtering cars, trucks, buses, motorcycles", "PASS"),
         ("Plate Localization Engine", "backend/detection/plate_detector.py", "Bumper ROI localization, morphological gradients, and vehicle bbox association", "PASS"),
         ("OCR Character Engine", "backend/ocr/plate_ocr.py", "EasyOCR recognition with IND blue strip removal and slot normalization", "PASS"),
@@ -206,12 +207,12 @@ def generate_report():
         ("Vehicle Registry Engine", "backend/vehicle_registry/", "Abstract interface, Demo SQLite registry, and VAHAN 4.0 government stub", "PASS"),
         ("Site Context & Route Engine", "backend/site_context/", "Site permits, 4 camera zones, and impossible/speed route anomaly detection", "PASS"),
         ("Security Alert Engine", "backend/alerts/", "Deterministic human-authored alerts, 10s deduplication, explainable trust snapshot", "PASS"),
-        ("Command Center UI", "frontend/", "React 18 + Vite + Tailwind: 4-CCTV grid, KPI cards, side-by-side evidence modal", "PASS"),
+        ("Command Center UI", "frontend/", "React 18 + Vite + Tailwind: 4-CCTV grid, YouTube stream player, evidence modal", "PASS"),
         ("Demo Scenario State Machine", "backend/demo/scenario_manager.py", "Controlled 4-scenario runner: Normal Repeat, Mismatch, Plate Swap, Unreadable", "PASS"),
         ("Database Persistence Layer", "backend/database/", "SQLite persistence (9 tables) for detections, registry, permits, routes, alerts", "PASS"),
         ("Evidence Storage Engine", "data/evidence/", "Multi-scale image vault (full frame, vehicle crop, plate crop, annotated ROI)", "PASS"),
-        ("REST API Application", "backend/app.py", "FastAPI web service serving 29 REST endpoints and compiled React frontend", "PASS"),
-        ("Automated QA Suite", "tests/", "37 comprehensive tests across foundation, identity, demo, and MVP modules", "PASS"),
+        ("REST API Application", "backend/app.py", "FastAPI web service serving 34 REST endpoints and compiled React frontend", "PASS"),
+        ("Automated QA Suite", "tests/", "42 comprehensive tests across foundation, identity, demo, MVP, and YouTube modules", "PASS"),
     ]
 
     status_table_data = [
@@ -414,8 +415,8 @@ def generate_report():
     story.append(PageBreak())
 
     # ==================== SECTION 5: AUTOMATED TEST AUDIT ====================
-    story.append(Paragraph("5. Automated Quality Assurance & Test Verification (37/37 Passed - 100%)", h2_style))
-    story.append(Paragraph("Automated test suite executed via <code>python -m pytest tests/ -v</code>. Pass rate: <b>100% (37 passed, 0 failed)</b> in <b>29.56s</b>.", body_style))
+    story.append(Paragraph("5. Automated Quality Assurance & Test Verification (42/42 Passed - 100%)", h2_style))
+    story.append(Paragraph("Automated test suite executed via <code>python -m pytest tests/ -v</code>. Pass rate: <b>100% (42 passed, 0 failed)</b> in <b>29.49s</b>.", body_style))
     story.append(Spacer(1, 4))
 
     test_records = [
@@ -460,6 +461,12 @@ def generate_report():
         ("tests/test_vtrace.py", "test_valid_structured_detection_event", "Validates Pydantic DetectionEvent schema and normalization", "PASS"),
         ("tests/test_vtrace.py", "test_database_insertion", "Verifies SQLite record insertion and query retrieval of events", "PASS"),
         ("tests/test_vtrace.py", "test_evidence_image_creation", "Confirms evidence images and crops are saved with correct paths", "PASS"),
+        # test_youtube_source.py (5)
+        ("tests/test_youtube_source.py", "test_youtube_source_success", "Verifies yt-dlp extraction and OpenCV live frame reading", "PASS"),
+        ("tests/test_youtube_source.py", "test_youtube_source_extraction_failure", "Asserts YOUTUBE_STREAM_UNAVAILABLE error on invalid stream", "PASS"),
+        ("tests/test_youtube_source.py", "test_youtube_source_opencv_failure", "Asserts YOUTUBE_STREAM_UNAVAILABLE error on decode failure", "PASS"),
+        ("tests/test_youtube_source.py", "test_youtube_stream_manager_state", "Validates background manager state machine and labeling", "PASS"),
+        ("tests/test_youtube_source.py", "test_youtube_api_endpoints", "Verifies all 5 YouTube live REST endpoints with TestClient", "PASS"),
     ]
 
     test_table_data = [

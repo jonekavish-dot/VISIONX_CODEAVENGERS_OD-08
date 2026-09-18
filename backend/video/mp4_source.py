@@ -20,7 +20,8 @@ class MP4Source(VideoSource):
         self._current_frame_idx = 0
 
     def open(self) -> bool:
-        if not os.path.exists(self.source_uri):
+        is_url = self.source_uri.startswith(("http://", "https://", "rtsp://"))
+        if not is_url and not os.path.exists(self.source_uri):
             self.is_opened = False
             return False
             

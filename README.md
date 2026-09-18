@@ -157,25 +157,45 @@
 | **Scenarios** | `POST` | `/api/demo/scenario/stop` | Gracefully stop active scenario runner |
 | **Scenarios** | `GET` | `/api/demo/scenario/status` | Real-time scenario state: active scenario, step index, decision, similarity |
 | **Scenarios** | `POST` | `/api/demo/reset` | Safe purge of demo records (`is_demo = 1`) strictly preserving production schemas |
+| **Live YouTube** | `POST` | `/api/live/youtube/start` | Connect & ingest public YouTube livestream URL via yt-dlp |
+| **Live YouTube** | `POST` | `/api/live/youtube/stop` | Gracefully terminate active YouTube livestream ingestion |
+| **Live YouTube** | `GET` | `/api/live/youtube/status` | Real-time status (OFFLINE, CONNECTING, CONNECTED, RECONNECTING) & metrics |
+| **Live YouTube** | `GET` | `/api/live/youtube/frame` | Streaming/snapshot JPEG of latest processed live internet frame |
+| **Live YouTube** | `GET` | `/api/live/youtube/latest` | Latest vehicle detection event from active public YouTube livestream |
 | **Media** | `GET` | `/api/media` | Universal local evidence image streaming endpoint (handles absolute & relative paths) |
 | **Media** | `GET` | `/evidence/{filename}` | Direct static HTTP access to saved evidence frames and crops |
 
 ---
 
-## 🧪 Automated QA Suite (37/37 Passing - 100%)
+## 🌐 Public Internet Camera & YouTube Live Ingestion
 
-The complete test suite verifies the end-to-end computer vision pipeline, deep visual embeddings, deterministic rules, registry consistency checks, site permits, route anomalies, and alert deduplication.
+IVACS V-TRACE supports direct ingestion of live public internet cameras and YouTube livestreams without caching or saving whole video files:
+
+* **Architecture:** `YouTube URL` $\to$ `yt-dlp stream extraction` $\to$ `OpenCV live HLS stream` $\to$ `FrameProcessor` (YOLOv8 + EasyOCR + ResNet18)
+* **Labeling:** Clearly segregated in the UI and database as **`PUBLIC INTERNET STREAM`** (distinct from construction site CCTV).
+* **Live Stream Verification:**
+  ```bash
+  python scripts/verify_youtube_live.py
+  ```
+  *(Verified with Coimbatore Avinashi Road public traffic camera: `https://www.youtube.com/watch?v=tmMrGbBOi1U`)*
+
+---
+
+## 🧪 Automated QA Suite (42/42 Passing - 100%)
+
+The complete test suite verifies the end-to-end computer vision pipeline, deep visual embeddings, deterministic rules, registry consistency checks, site permits, route anomalies, alert deduplication, and YouTube live ingestion.
 
 ```bash
 python -m pytest tests/ -v
 ```
 
 ```
-====================== 37 passed in 29.56s =======================
+====================== 42 passed in 29.49s =======================
 tests/test_final_mvp.py (15/15 PASS)
 tests/test_demo_scenarios.py (8/8 PASS)
 tests/test_identity.py (7/7 PASS)
 tests/test_vtrace.py (7/7 PASS)
+tests/test_youtube_source.py (5/5 PASS)
 ```
 
 ---
@@ -184,7 +204,7 @@ tests/test_vtrace.py (7/7 PASS)
 
 ### 1. Installation
 ```bash
-pip install opencv-python ultralytics easyocr fastapi uvicorn reportlab pytest torchvision torch
+pip install opencv-python ultralytics easyocr fastapi uvicorn reportlab pytest torchvision torch yt-dlp
 ```
 
 ### 2. Build Frontend (React Command Center)

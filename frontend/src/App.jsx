@@ -42,6 +42,91 @@ export default function App() {
   const [registryModal, setRegistryModal] = useState(null);     // Plate or record
   const [alertFilter, setAlertFilter] = useState({ severity: '', type: '' });
 
+  // ==================== LIVE INTERNET CAMERA STATE ====================
+  const [youtubeUrl, setYoutubeUrl] = useState('https://www.youtube.com/watch?v=tmMrGbBOi1U');
+  const [youtubeStatus, setYoutubeStatus] = useState({
+    status: 'OFFLINE',
+    title: 'Public YouTube Stream',
+    is_live: false,
+    fps: 0,
+    current_frame: 0,
+    processed_count: 0,
+    detections_count: 0,
+    last_error: null,
+    stream_type: 'PUBLIC_INTERNET_STREAM',
+    label: 'PUBLIC INTERNET STREAM (Not Construction Site CCTV)'
+  });
+  const [youtubeFrameTs, setYoutubeFrameTs] = useState(Date.now());
+  const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
+
+  // Poll YouTube status
+  useEffect(() => {
+    let interval = null;
+    const fetchYoutubeStatus = async () => {
+      try {
+        const res = await fetch('/api/live/youtube/status');
+        if (res.ok) {
+          const data = await res.json();
+          setYoutubeStatus(data);
+          if (data.status === 'CONNECTED' || data.status === 'RECONNECTING') {
+            setYoutubeFrameTs(Date.now());
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching YouTube status:', err);
+      }
+    };
+
+    fetchYoutubeStatus();
+    interval = setInterval(fetchYoutubeStatus, 1200);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, []);
+
+  const handleStartYoutube = async () => {
+    if (!youtubeUrl.trim()) return;
+    setIsYoutubeLoading(true);
+    setYoutubeStatus(prev => ({ ...prev, status: 'CONNECTING', last_error: null }));
+    try {
+      const res = await fetch('/api/live/youtube/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: youtubeUrl.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setYoutubeStatus(prev => ({
+          ...prev,
+          status: 'YOUTUBE_STREAM_UNAVAILABLE',
+          last_error: data.detail || 'Failed to connect'
+        }));
+      } else {
+        setYoutubeStatus(prev => ({ ...prev, status: data.status || 'CONNECTING' }));
+      }
+    } catch (err) {
+      setYoutubeStatus(prev => ({
+        ...prev,
+        status: 'YOUTUBE_STREAM_UNAVAILABLE',
+        last_error: err.message
+      }));
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+
+  const handleStopYoutube = async () => {
+    setIsYoutubeLoading(true);
+    try {
+      await fetch('/api/live/youtube/stop', { method: 'POST' });
+      setYoutubeStatus(prev => ({ ...prev, status: 'OFFLINE' }));
+    } catch (err) {
+      console.error('Error stopping YouTube stream:', err);
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+
   // 1. Fetch Health Status
   const fetchHealth = useCallback(async () => {
     try {
@@ -360,6 +445,128 @@ export default function App() {
             <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center space-x-2 text-xs text-blue-400 font-mono animate-pulse">
               <span className="w-2 h-2 rounded-full bg-blue-500"></span>
               <span>Executing {activeScenarioName}... processing real ResNet18 embeddings through decision rules...</span>
+            </div>
+          )}
+        </div>
+
+        {/* ==================== 2B. LIVE INTERNET CAMERA INPUT (PUBLIC STREAM) ==================== */}
+        <div className="bg-slate-900/90 border border-indigo-500/30 rounded-xl p-4 shadow-lg space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                <span className="font-mono text-sm font-bold text-white tracking-wide">
+                  LIVE INTERNET CAMERA (PUBLIC INTERNET STREAM)
+                </span>
+                {/* Status Badge */}
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold uppercase tracking-wider flex items-center space-x-1.5 ${
+                  youtubeStatus.status === 'CONNECTED'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : youtubeStatus.status === 'CONNECTING'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                    : youtubeStatus.status === 'RECONNECTING'
+                    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40 animate-pulse'
+                    : youtubeStatus.status === 'YOUTUBE_STREAM_UNAVAILABLE'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    youtubeStatus.status === 'CONNECTED' ? 'bg-emerald-400 animate-ping' :
+                    youtubeStatus.status === 'CONNECTING' || youtubeStatus.status === 'RECONNECTING' ? 'bg-amber-400' :
+                    youtubeStatus.status === 'YOUTUBE_STREAM_UNAVAILABLE' ? 'bg-rose-400' : 'bg-slate-500'
+                  }`}></span>
+                  <span>{youtubeStatus.status}</span>
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                <strong className="text-indigo-300">PUBLIC INTERNET STREAM</strong> — Public Traffic Camera (Not Construction Site CCTV).
+                Ingested directly via <code className="text-slate-300">yt-dlp</code> into native YOLOv8 + EasyOCR + ResNet18 pipeline.
+              </p>
+            </div>
+
+            {/* Input & Connect Action Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1 sm:w-[380px]">
+                <input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {youtubeStatus.status === 'CONNECTED' || youtubeStatus.status === 'CONNECTING' ? (
+                <button
+                  onClick={handleStopYoutube}
+                  disabled={isYoutubeLoading}
+                  className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-semibold shadow transition disabled:opacity-50"
+                >
+                  DISCONNECT
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartYoutube}
+                  disabled={isYoutubeLoading}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-semibold shadow transition disabled:opacity-50 flex items-center space-x-1.5 justify-center"
+                >
+                  <span>{isYoutubeLoading ? 'CONNECTING...' : 'CONNECT'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Stream Player & Real-Time Telemetry Bar (Visible when active) */}
+          {(youtubeStatus.status === 'CONNECTED' || youtubeStatus.status === 'CONNECTING' || youtubeStatus.status === 'RECONNECTING') && (
+            <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-1 lg:grid-cols-3 gap-4 items-center">
+              <div className="lg:col-span-2 relative bg-black rounded-lg overflow-hidden border border-slate-800 aspect-video flex items-center justify-center">
+                <img
+                  src={`/api/live/youtube/frame?t=${youtubeFrameTs}`}
+                  alt="Live Internet Camera"
+                  className="w-full h-full object-contain"
+                />
+                <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/70 backdrop-blur border border-slate-700 text-[11px] font-mono text-white flex items-center space-x-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="font-bold">LIVE INTERNET STREAM</span>
+                </div>
+                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 font-mono text-[10px] text-slate-300">
+                  {youtubeStatus.fps} FPS
+                </div>
+              </div>
+
+              {/* Stream Telemetry Card */}
+              <div className="bg-slate-950/70 border border-slate-800/90 rounded-lg p-3.5 space-y-2.5 text-xs font-mono">
+                <div className="text-slate-300 font-bold border-b border-slate-800 pb-1.5 truncate">
+                  {youtubeStatus.title}
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Stream Source:</span>
+                  <span className="text-indigo-300 font-semibold">YouTube Live HLS</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Processed Frames:</span>
+                  <span className="text-white font-bold">{youtubeStatus.processed_count}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Live Vehicles Detected:</span>
+                  <span className="text-emerald-400 font-bold">{youtubeStatus.detections_count}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Pipeline Latency:</span>
+                  <span className="text-cyan-400 font-semibold">{youtubeStatus.fps > 0 ? `${Math.round(1000 / youtubeStatus.fps)}ms` : 'Calculating...'}</span>
+                </div>
+                <div className="pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 italic">
+                  Note: Frames are streamed dynamically from the internet without caching whole files.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error Banner if stream unavailable */}
+          {youtubeStatus.status === 'YOUTUBE_STREAM_UNAVAILABLE' && (
+            <div className="mt-2 p-2.5 rounded-lg bg-rose-950/30 border border-rose-500/40 text-xs font-mono text-rose-300 flex items-center justify-between">
+              <span>Error: {youtubeStatus.last_error || 'YOUTUBE_STREAM_UNAVAILABLE'}</span>
+              <button onClick={handleStartYoutube} className="text-[11px] underline hover:text-white">Retry Connection</button>
             </div>
           )}
         </div>
