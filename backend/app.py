@@ -178,7 +178,7 @@ class DemoRunner:
                 current_fps = frames_since_start / max(0.001, elapsed)
 
                 # Process single frame
-                events, annotated_frame = frame_processor.process_frame(
+                events, annotated_frame = get_frame_processor().process_frame(
                     frame=frame,
                     frame_number=frame_num,
                     camera_id=camera_id,
@@ -214,22 +214,29 @@ class DemoRunner:
 init_db()
 
 frame_processor: Optional[FrameProcessor] = None
+frame_processor_lock = threading.Lock()
 demo_runner = DemoRunner()
 registry_service = VehicleRegistryService()
 context_service = SiteContextService()
 alert_service = AlertService(registry_service=registry_service, context_service=context_service)
 scenario_manager = ScenarioManager(alert_service=alert_service)
 
+def get_frame_processor() -> FrameProcessor:
+    """Load the heavyweight AI pipeline on first use, not during web startup."""
+    global frame_processor
+    if frame_processor is None:
+        with frame_processor_lock:
+            if frame_processor is None:
+                frame_processor = FrameProcessor()
+                scenario_manager.identity_service = frame_processor.identity_service
+    return frame_processor
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global frame_processor, scenario_manager
     logger.info("Initializing IVACS V-TRACE Backend...")
     init_db()
-    # Initialize shared FrameProcessor
-    frame_processor = FrameProcessor()
-    scenario_manager.identity_service = frame_processor.identity_service
     scenario_manager.alert_service = alert_service
-    logger.info("IVACS V-TRACE frame processor and scenario manager initialized.")
+    logger.info("IVACS V-TRACE Backend ready; AI models will load on first processing request.")
     yield
     logger.info("Shutting down IVACS V-TRACE Backend...")
     demo_runner.stop()
@@ -497,7 +504,7 @@ def start_youtube_stream(req: YouTubeStreamStartRequest):
     
     res = youtube_stream_manager.start(
         url=req.url.strip(),
-        frame_processor=frame_processor,
+        frame_processor=get_frame_processor(),
         alert_service=alert_service
     )
     return res
@@ -544,4 +551,3 @@ def get_youtube_stream_latest():
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
-
