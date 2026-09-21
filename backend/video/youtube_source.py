@@ -45,10 +45,7 @@ class YouTubeSource(VideoSource):
             self.last_error = YOUTUBE_STREAM_UNAVAILABLE
             return None
 
-        # Prefer one muxed stream. OpenCV cannot combine the separate audio/video
-        # URLs returned by yt-dlp's bestvideo+bestaudio selector.
         ydl_opts = {
-            "format": "best[height<=720][vcodec!=none][acodec!=none]/best[height<=720]/best",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,

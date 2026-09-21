@@ -5,15 +5,15 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://ivacs-vtrace-backend.onrender.com/api/$1"
+      "destination": "https://visionx-codeavengers-od-08.onrender.com/api/$1"
     },
     {
       "source": "/evidence/(.*)",
-      "destination": "https://ivacs-vtrace-backend.onrender.com/evidence/$1"
+      "destination": "https://visionx-codeavengers-od-08.onrender.com/evidence/$1"
     },
     {
       "source": "/scenarios/(.*)",
-      "destination": "https://ivacs-vtrace-backend.onrender.com/scenarios/$1"
+      "destination": "https://visionx-codeavengers-od-08.onrender.com/scenarios/$1"
     },
     {
       "source": "/(.*)",

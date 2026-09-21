@@ -72,7 +72,7 @@ export default function App() {
   // Backend Connection Settings
   const [currentBackendUrl, setCurrentBackendUrl] = useState(() => getApiBaseUrl());
   const [showBackendConfigModal, setShowBackendConfigModal] = useState(false);
-  const [customUrlInput, setCustomUrlInput] = useState(() => getApiBaseUrl() || 'https://ivacs-vtrace-backend.onrender.com');
+  const [customUrlInput, setCustomUrlInput] = useState(() => getApiBaseUrl() || 'https://visionx-codeavengers-od-08.onrender.com');
   const [testResult, setTestResult] = useState(null);
   const [isTestingUrl, setIsTestingUrl] = useState(false);
 
@@ -208,7 +208,15 @@ export default function App() {
   // 1. Fetch Health Status
   const fetchHealth = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/health');
+      let res = await apiFetch('/api/health');
+      if (!res.ok && getApiBaseUrl()) {
+        // Fallback to current origin server if custom URL returned error
+        res = await fetch('/api/health');
+        if (res.ok) {
+          localStorage.removeItem('vtrace_backend_url');
+          setCurrentBackendUrl('');
+        }
+      }
       if (res.ok) {
         const data = await res.json();
         setHealth(data);
@@ -216,6 +224,19 @@ export default function App() {
         setHealth({ status: 'offline', runtime_device: 'cpu', models_loaded: false });
       }
     } catch {
+      // If fetching custom URL threw network error, try current origin server
+      try {
+        const sameOriginRes = await fetch('/api/health');
+        if (sameOriginRes.ok) {
+          const data = await sameOriginRes.json();
+          localStorage.removeItem('vtrace_backend_url');
+          setCurrentBackendUrl('');
+          setHealth(data);
+          return;
+        }
+      } catch {
+        // both failed
+      }
       setHealth({ status: 'offline', runtime_device: 'cpu', models_loaded: false });
     }
   }, []);
@@ -424,7 +445,7 @@ export default function App() {
             </div>
             <div className="flex items-center space-x-2 shrink-0">
               <button
-                onClick={() => saveBackendUrl('https://ivacs-vtrace-backend.onrender.com')}
+                onClick={() => saveBackendUrl('https://visionx-codeavengers-od-08.onrender.com')}
                 className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-semibold transition"
               >
                 Render Backend
@@ -1345,7 +1366,7 @@ export default function App() {
                   type="text"
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
-                  placeholder="https://ivacs-vtrace-backend.onrender.com or http://localhost:8000"
+                  placeholder="https://visionx-codeavengers-od-08.onrender.com or http://localhost:8000"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -1356,12 +1377,12 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => {
-                      setCustomUrlInput('https://ivacs-vtrace-backend.onrender.com');
-                      testBackendConnection('https://ivacs-vtrace-backend.onrender.com');
+                      setCustomUrlInput('https://visionx-codeavengers-od-08.onrender.com');
+                      testBackendConnection('https://visionx-codeavengers-od-08.onrender.com');
                     }}
                     className="px-2.5 py-1 rounded bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700 text-blue-200 text-[11px]"
                   >
-                    Render Server (https://ivacs-vtrace-backend.onrender.com)
+                    Render Server (https://visionx-codeavengers-od-08.onrender.com)
                   </button>
                   <button
                     onClick={() => {

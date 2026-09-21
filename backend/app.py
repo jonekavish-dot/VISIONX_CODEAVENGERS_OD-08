@@ -10,9 +10,17 @@ import threading
 from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
 
+import gc
 import cv2
 import numpy as np
 import torch
+
+# Render Free Tier Memory & CPU Thread Optimization (<512MB RAM cap)
+try:
+    torch.set_num_threads(2)
+    torch.set_grad_enabled(False)
+except Exception:
+    pass
 from fastapi import FastAPI, BackgroundTasks, Query, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
