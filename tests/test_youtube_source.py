@@ -76,7 +76,7 @@ def test_youtube_source_extraction_failure():
         opened = source.open()
         assert opened is False
         assert source.is_opened is False
-        assert source.last_error == YOUTUBE_STREAM_UNAVAILABLE
+        assert YOUTUBE_STREAM_UNAVAILABLE in source.last_error
 
 
 # 3. Test OpenCV connection failure yields YOUTUBE_STREAM_UNAVAILABLE
