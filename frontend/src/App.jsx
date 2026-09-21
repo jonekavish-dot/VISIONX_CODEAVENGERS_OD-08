@@ -162,8 +162,18 @@ export default function App() {
     label: 'PUBLIC INTERNET STREAM (Not Construction Site CCTV)'
   });
   const [youtubeFrameTs, setYoutubeFrameTs] = useState(Date.now());
-
   const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
+
+  // Auto-refresh YouTube stream frame image URL when stream is active
+  useEffect(() => {
+    if (youtubeStatus.status === 'CONNECTED' || youtubeStatus.status === 'CONNECTING' || youtubeStatus.status === 'RECONNECTING') {
+      const frameTimer = setInterval(() => {
+        setYoutubeFrameTs(Date.now());
+      }, 400);
+      return () => clearInterval(frameTimer);
+    }
+  }, [youtubeStatus.status]);
+
 
 
   const handleStartYoutube = async () => {

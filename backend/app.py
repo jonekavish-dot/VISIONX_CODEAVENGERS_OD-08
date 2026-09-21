@@ -594,7 +594,12 @@ def get_youtube_stream_frame():
         cv2.putText(placeholder, "(Not Construction Site CCTV)", (40, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
         _, buf = cv2.imencode(".jpg", placeholder)
         jpeg_bytes = buf.tobytes()
-    return Response(content=jpeg_bytes, media_type="image/jpeg")
+    return Response(
+        content=jpeg_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"}
+    )
+
 
 @app.get("/api/live/youtube/latest")
 @app.get("/api/live/youtube/latest/")
