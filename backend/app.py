@@ -443,6 +443,41 @@ def get_dashboard_summary_endpoint():
 def get_dashboard_live_endpoint():
     return get_latest_observations_by_camera()
 
+# 20b. Consolidated Dashboard Telemetry Endpoint (Single-fetch optimized for Render Free Tier)
+@app.get("/api/dashboard/all")
+def get_dashboard_all_endpoint(
+    alert_limit: int = Query(15, ge=1, le=100),
+    severity: Optional[str] = None,
+    alert_type: Optional[str] = None
+):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    health_data = {
+        "status": "healthy",
+        "service": "IVACS V-TRACE Engine",
+        "version": "1.0.0",
+        "runtime_device": device,
+        "models_loaded": (frame_processor is not None)
+    }
+    summary_data = alert_service.get_dashboard_summary()
+    live_data = get_latest_observations_by_camera()
+    latest_detection = get_latest_detection()
+    alerts_data = alert_service.get_alerts(
+        limit=alert_limit,
+        severity=severity,
+        alert_type=alert_type
+    )
+    youtube_status = youtube_stream_manager.get_status()
+    
+    return {
+        "health": health_data,
+        "summary": summary_data,
+        "live": live_data,
+        "latest_detection": latest_detection,
+        "alerts": alerts_data,
+        "youtube": youtube_status
+    }
+
+
 # 21. Vehicle Trust Snapshot Endpoint
 @app.get("/api/vehicles/{vehicle_id}/trust-snapshot", response_model=VehicleTrustSnapshot)
 def get_vehicle_trust_snapshot_endpoint(vehicle_id: str):

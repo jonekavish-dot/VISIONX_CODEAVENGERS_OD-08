@@ -86,10 +86,10 @@ export default function App() {
     setCurrentBackendUrl(clean);
     setTestResult({ success: true, message: 'Backend URL updated! Testing connection...' });
     setTimeout(() => {
-      fetchHealth();
-      fetchDashboardData();
+      fetchDashboardAll();
     }, 300);
   };
+
 
   const testBackendConnection = async (targetUrl) => {
     setIsTestingUrl(true);
@@ -137,150 +137,66 @@ export default function App() {
   const [youtubeFrameTs, setYoutubeFrameTs] = useState(Date.now());
   const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
 
-  // Poll YouTube status
-  useEffect(() => {
-    let interval = null;
-    const fetchYoutubeStatus = async () => {
-      try {
-        const res = await apiFetch('/api/live/youtube/status');
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+
+  // Single-fetch Consolidated Dashboard Telemetry Polling (Optimized for Render Free Tier)
+  const fetchDashboardAll = useCallback(async () => {
+    try {
+      let alertParams = '?alert_limit=15';
+      if (alertFilter.severity) alertParams += `&severity=${alertFilter.severity}`;
+      if (alertFilter.type) alertParams += `&alert_type=${alertFilter.type}`;
+
+      let res = await apiFetch(`/api/dashboard/all${alertParams}`);
+
+      // Fallback to same-origin if custom URL fails but same-origin succeeds
+      if (!res.ok && getApiBaseUrl()) {
+        res = await fetch(`/api/dashboard/all${alertParams}`);
         if (res.ok) {
-          const data = await res.json();
-          setYoutubeStatus(data);
-          if (data.status === 'CONNECTED' || data.status === 'RECONNECTING') {
+          localStorage.removeItem('vtrace_backend_url');
+          setCurrentBackendUrl('');
+        }
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.health) setHealth(data.health);
+        if (data.summary) setSummary(data.summary);
+        if (data.live) setLiveCameras(data.live);
+        if (data.latest_detection !== undefined) setLatestDetection(data.latest_detection);
+        if (data.alerts) setAlerts(data.alerts);
+        if (data.youtube) {
+          setYoutubeStatus(data.youtube);
+          if (data.youtube.status === 'CONNECTED' || data.youtube.status === 'RECONNECTING') {
             setYoutubeFrameTs(Date.now());
           }
         }
-      } catch (err) {
-        console.error('Error fetching YouTube status:', err);
+        setConsecutiveFailures(0);
+      } else {
+        throw new Error(`HTTP ${res.status}`);
       }
-    };
-
-    fetchYoutubeStatus();
-    interval = setInterval(fetchYoutubeStatus, 1200);
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, []);
-
-  const handleStartYoutube = async () => {
-    if (!youtubeUrl.trim()) return;
-    setIsYoutubeLoading(true);
-    setYoutubeStatus(prev => ({ ...prev, status: 'CONNECTING', last_error: null }));
-    try {
-      const res = await apiFetch('/api/live/youtube/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: youtubeUrl.trim() })
+    } catch (err) {
+      setConsecutiveFailures(prev => {
+        const next = prev + 1;
+        if (next < 3) {
+          setHealth(old => ({ ...old, status: 'reconnecting' }));
+        } else {
+          setHealth(old => ({ ...old, status: 'offline' }));
+        }
+        return next;
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setYoutubeStatus(prev => ({
-          ...prev,
-          status: 'YOUTUBE_STREAM_UNAVAILABLE',
-          last_error: data.detail || 'Failed to connect'
-        }));
-      } else {
-        setYoutubeStatus(prev => ({ ...prev, status: data.status || 'CONNECTING' }));
-      }
-    } catch (err) {
-      setYoutubeStatus(prev => ({
-        ...prev,
-        status: 'YOUTUBE_STREAM_UNAVAILABLE',
-        last_error: err.message
-      }));
-    } finally {
-      setIsYoutubeLoading(false);
-    }
-  };
-
-  const handleStopYoutube = async () => {
-    setIsYoutubeLoading(true);
-    try {
-      await apiFetch('/api/live/youtube/stop', { method: 'POST' });
-      setYoutubeStatus(prev => ({ ...prev, status: 'OFFLINE' }));
-    } catch (err) {
-      console.error('Error stopping YouTube stream:', err);
-    } finally {
-      setIsYoutubeLoading(false);
-    }
-  };
-
-  // 1. Fetch Health Status
-  const fetchHealth = useCallback(async () => {
-    try {
-      let res = await apiFetch('/api/health');
-      if (!res.ok && getApiBaseUrl()) {
-        // Fallback to current origin server if custom URL returned error
-        res = await fetch('/api/health');
-        if (res.ok) {
-          localStorage.removeItem('vtrace_backend_url');
-          setCurrentBackendUrl('');
-        }
-      }
-      if (res.ok) {
-        const data = await res.json();
-        setHealth(data);
-      } else {
-        setHealth({ status: 'offline', runtime_device: 'cpu', models_loaded: false });
-      }
-    } catch {
-      // If fetching custom URL threw network error, try current origin server
-      try {
-        const sameOriginRes = await fetch('/api/health');
-        if (sameOriginRes.ok) {
-          const data = await sameOriginRes.json();
-          localStorage.removeItem('vtrace_backend_url');
-          setCurrentBackendUrl('');
-          setHealth(data);
-          return;
-        }
-      } catch {
-        // both failed
-      }
-      setHealth({ status: 'offline', runtime_device: 'cpu', models_loaded: false });
-    }
-  }, []);
-
-  // 2. Fetch Dashboard Telemetry & Summary
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      // Summary
-      const sumRes = await apiFetch('/api/dashboard/summary');
-      if (sumRes.ok) setSummary(await sumRes.json());
-
-      // Live Cameras
-      const liveRes = await apiFetch('/api/dashboard/live');
-      if (liveRes.ok) setLiveCameras(await liveRes.json());
-
-      // Latest Detection
-      const detRes = await apiFetch('/api/detections/latest');
-      if (detRes.ok) {
-        const detData = await detRes.json();
-        setLatestDetection(detData);
-      }
-
-      // Alerts
-      let alertUrl = '/api/alerts?limit=15';
-      if (alertFilter.severity) alertUrl += `&severity=${alertFilter.severity}`;
-      if (alertFilter.type) alertUrl += `&alert_type=${alertFilter.type}`;
-      const alertRes = await apiFetch(alertUrl);
-      if (alertRes.ok) setAlerts(await alertRes.json());
-
-    } catch (err) {
-      console.error('Error fetching dashboard telemetry:', err);
     }
   }, [alertFilter]);
 
-  // Periodic Telemetry Polling (Every 1.8s)
+  // Periodic Telemetry Polling (3000ms idle, 2000ms when scenario running)
   useEffect(() => {
-    fetchHealth();
-    fetchDashboardData();
+    fetchDashboardAll();
+    const pollInterval = isRunningScenario ? 2000 : 3000;
     const interval = setInterval(() => {
-      fetchHealth();
-      fetchDashboardData();
-    }, 1800);
+      fetchDashboardAll();
+    }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchHealth, fetchDashboardData]);
+  }, [fetchDashboardAll, isRunningScenario]);
+
 
   // 3. Demo Scenario Trigger
   const triggerScenario = async (scenarioName) => {
@@ -294,7 +210,7 @@ export default function App() {
       });
       const data = await res.json();
       setScenarioStatus(data);
-      await fetchDashboardData();
+      await fetchDashboardAll();
 
       // Automatically pop up evidence comparison modal for identity mismatch & plate swap
       if (data.comparison) {
@@ -314,8 +230,9 @@ export default function App() {
       setComparisonModal(null);
       setHistoryModal(null);
       setScenarioStatus(null);
-      await fetchDashboardData();
+      await fetchDashboardAll();
     } catch (err) {
+
       console.error('Failed to reset demo data:', err);
     }
   };
@@ -391,14 +308,18 @@ export default function App() {
 
         {/* Status Indicators & Demo Badge */}
         <div className="flex items-center space-x-3">
-          {/* Online / Offline status */}
+          {/* Online / Reconnecting / Offline status */}
           <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-xs">
-            <span className={`w-2 h-2 rounded-full ${health.status === 'healthy' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></span>
+            <span className={`w-2 h-2 rounded-full ${
+              health.status === 'healthy' ? 'bg-emerald-400 animate-pulse' :
+              health.status === 'reconnecting' ? 'bg-amber-400 animate-ping' : 'bg-rose-500'
+            }`}></span>
             <span className="font-mono font-medium text-slate-200">
-              {health.status === 'healthy' ? 'ONLINE' : 'OFFLINE'}
+              {health.status === 'healthy' ? 'ONLINE' : health.status === 'reconnecting' ? 'RECONNECTING...' : 'OFFLINE'}
             </span>
-            <span className="text-slate-500 text-[10px]">({health.runtime_device.toUpperCase()})</span>
+            <span className="text-slate-500 text-[10px]">({(health.runtime_device || 'cpu').toUpperCase()})</span>
           </div>
+
 
           {/* Explicit DEMO DATA indicator */}
           <div className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono font-semibold">

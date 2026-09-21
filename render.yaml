@@ -5,9 +5,18 @@ services:
     region: oregon
     plan: free
     buildCommand: "pip install -r requirements.txt && cd frontend && npm install && npm run build && cd .."
-    startCommand: "uvicorn backend.app:app --host 0.0.0.0 --port $PORT --workers 1 --limit-max-requests 200"
+    startCommand: "uvicorn backend.app:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 65"
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
       - key: NODE_VERSION
         value: 18.17.0
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
