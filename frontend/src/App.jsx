@@ -135,9 +135,55 @@ export default function App() {
     label: 'PUBLIC INTERNET STREAM (Not Construction Site CCTV)'
   });
   const [youtubeFrameTs, setYoutubeFrameTs] = useState(Date.now());
+
   const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
 
+
+  const handleStartYoutube = async () => {
+    if (!youtubeUrl.trim()) return;
+    setIsYoutubeLoading(true);
+    setYoutubeStatus(prev => ({ ...prev, status: 'CONNECTING', last_error: null }));
+    try {
+      const res = await apiFetch('/api/live/youtube/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: youtubeUrl.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setYoutubeStatus(prev => ({
+          ...prev,
+          status: 'YOUTUBE_STREAM_UNAVAILABLE',
+          last_error: data.detail || 'Failed to connect'
+        }));
+      } else {
+        setYoutubeStatus(prev => ({ ...prev, status: data.status || 'CONNECTING' }));
+      }
+    } catch (err) {
+      setYoutubeStatus(prev => ({
+        ...prev,
+        status: 'YOUTUBE_STREAM_UNAVAILABLE',
+        last_error: err.message
+      }));
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+
+  const handleStopYoutube = async () => {
+    setIsYoutubeLoading(true);
+    try {
+      await apiFetch('/api/live/youtube/stop', { method: 'POST' });
+      setYoutubeStatus(prev => ({ ...prev, status: 'OFFLINE' }));
+    } catch (err) {
+      console.error('Error stopping YouTube stream:', err);
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+
 
   // Single-fetch Consolidated Dashboard Telemetry Polling (Optimized for Render Free Tier)
   const fetchDashboardAll = useCallback(async () => {
