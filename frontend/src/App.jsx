@@ -101,29 +101,51 @@ export default function App() {
     setTestResult(null);
     const clean = (targetUrl || '').trim().replace(/\/$/, '');
     const urlToTest = clean ? `${clean}/api/health` : '/api/health';
-    try {
-      const res = await fetch(urlToTest);
-      if (res.ok) {
-        const data = await res.json();
-        setTestResult({
-          success: true,
-          message: `Connected successfully! Device: ${data.runtime_device || 'CPU'}, Status: ${data.status}`
-        });
-      } else {
+
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastError = null;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      if (attempts > 1) {
         setTestResult({
           success: false,
-          message: `Server returned HTTP ${res.status} ${res.statusText}`
+          message: `Attempt ${attempts}/${maxAttempts}: Render backend waking up from sleep (cold boot)... please wait`
         });
       }
-    } catch (err) {
-      setTestResult({
-        success: false,
-        message: `Connection failed: ${err.message}. Make sure Render backend is active.`
-      });
-    } finally {
-      setIsTestingUrl(false);
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch(urlToTest, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          setTestResult({
+            success: true,
+            message: `Connected successfully! Device: ${data.runtime_device || 'CPU'}, Status: ${data.status}`
+          });
+          setIsTestingUrl(false);
+          return;
+        } else {
+          lastError = `Server returned HTTP ${res.status} ${res.statusText}`;
+        }
+      } catch (err) {
+        lastError = err.name === 'AbortError' ? 'Connection timed out (Render cold booting)' : err.message;
+      }
+      if (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
+
+    setTestResult({
+      success: false,
+      message: `Connection failed: ${lastError}. Make sure Render backend is active.`
+    });
+    setIsTestingUrl(false);
   };
+
 
   // ==================== LIVE INTERNET CAMERA STATE ====================
   const [youtubeUrl, setYoutubeUrl] = useState('https://www.youtube.com/watch?v=tmMrGbBOi1U');

@@ -259,14 +259,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware
+# CORS Middleware (Universal Cross-Origin Support for Vercel & Web Browsers)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
 
 # Mount evidence directory for serving images directly to UI / judges
 app.mount("/evidence", StaticFiles(directory=str(EVIDENCE_DIR)), name="evidence")
