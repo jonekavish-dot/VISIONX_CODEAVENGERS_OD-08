@@ -1,0 +1,23 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://visionx-codeavengers-od-08.onrender.com/api/$1"
+    },
+    {
+      "source": "/evidence/(.*)",
+      "destination": "https://visionx-codeavengers-od-08.onrender.com/evidence/$1"
+    },
+    {
+      "source": "/scenarios/(.*)",
+      "destination": "https://visionx-codeavengers-od-08.onrender.com/scenarios/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
