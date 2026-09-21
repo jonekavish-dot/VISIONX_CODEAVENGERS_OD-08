@@ -6,9 +6,14 @@ function getApiBaseUrl() {
     if (custom && custom.trim()) {
       return custom.trim().replace(/\/$/, '');
     }
+    // Auto-connect Vercel frontend to live Render FastAPI backend
+    if (window.location.hostname.includes('vercel.app') || (!window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1'))) {
+      return 'https://visionx-codeavengers-od-08.onrender.com';
+    }
   }
   return (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 }
+
 
 function apiUrl(path) {
   return `${getApiBaseUrl()}${path}`;

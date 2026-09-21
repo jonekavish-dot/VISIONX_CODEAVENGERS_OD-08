@@ -44,7 +44,7 @@ class YouTubeStreamManager:
         self._frame_processor = None
         self._alert_service = None
 
-    def start(self, url: str, frame_processor, alert_service=None, process_every_n: int = 4) -> Dict[str, Any]:
+    def start(self, url: str, frame_processor, alert_service=None, process_every_n: int = 8) -> Dict[str, Any]:
         """
         Start ingesting and processing the specified public YouTube livestream.
         """
@@ -79,7 +79,7 @@ class YouTubeStreamManager:
                 "message": "Connecting to live YouTube camera stream..."
             }
 
-    def _worker_loop(self, url: str, process_every_n: int):
+    def _worker_loop(self, url: str, process_every_n: int = 8):
         logger.info(f"Starting YouTube stream ingestion for: {url}")
         source = YouTubeSource(youtube_url=url, camera_id="CAM-PUBLIC-INTERNET")
         self._source = source
@@ -112,9 +112,13 @@ class YouTubeStreamManager:
                     if consecutive_read_failures == 1:
                         with self.lock:
                             self.status = "RECONNECTING"
-                            logger.warning("Temporary frame drop on YouTube stream, attempting to reconnect...")
+                            logger.warning("Temporary frame drop on YouTube stream, attempting to refresh HLS token...")
 
-                    if consecutive_read_failures > 8:
+                    if consecutive_read_failures in (4, 8):
+                        logger.info("Refreshing YouTube HLS stream URL via yt-dlp...")
+                        source.open()
+
+                    if consecutive_read_failures > 15:
                         with self.lock:
                             self.status = "OFFLINE"
                             self.last_error = "Stream disconnected after repeated read failures"
@@ -131,14 +135,21 @@ class YouTubeStreamManager:
                     if self.status == "RECONNECTING":
                         self.status = "CONNECTED"
 
-                # Process every Nth frame to avoid lag on CPU inference
+                # Process every Nth frame to avoid lag and CPU/memory exhaustion on Render free tier
                 if frame_idx % process_every_n != 0:
+                    time.sleep(0.01)
                     continue
 
                 if self._frame_processor is None:
                     continue
 
                 try:
+                    # Normalize frame size to max 960px width to save RAM on Render Free Tier (<512MB)
+                    h, w = frame.shape[:2]
+                    if w > 960:
+                        target_h = int(h * (960.0 / w))
+                        frame = cv2.resize(frame, (960, target_h), interpolation=cv2.INTER_AREA)
+
                     # Run native FrameProcessor pipeline (YOLOv8 + OpenCV + EasyOCR + ResNet18)
                     events, annotated_frame = self._frame_processor.process_frame(
                         frame=frame,
@@ -148,7 +159,7 @@ class YouTubeStreamManager:
                     )
 
                     # Encode annotated frame as JPEG for GET /api/live/youtube/frame
-                    encode_success, jpeg_buf = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    encode_success, jpeg_buf = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
                     jpeg_bytes = jpeg_buf.tobytes() if encode_success else None
 
                     # Count real vehicle detections
@@ -168,11 +179,19 @@ class YouTubeStreamManager:
                         elapsed = max(0.001, time.time() - start_time)
                         self.fps = round(self.processed_count / elapsed, 1)
 
+                    # Periodically invoke garbage collector to keep memory below 280MB cap
+                    if self.processed_count % 4 == 0:
+                        import gc
+                        gc.collect()
+
+                    time.sleep(0.03)
+
                 except Exception as proc_err:
                     logger.error(f"Error processing frame {f_num} from YouTube stream: {proc_err}")
 
         except Exception as e:
             logger.error(f"Unexpected error in YouTube stream worker: {e}", exc_info=True)
+
             with self.lock:
                 self.status = "OFFLINE"
                 self.last_error = str(e)
