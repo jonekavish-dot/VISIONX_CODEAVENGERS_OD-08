@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+function getApiBaseUrl() {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('vtrace_backend_url');
+    if (custom && custom.trim()) {
+      return custom.trim().replace(/\/$/, '');
+    }
+  }
+  return (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+}
 
 function apiUrl(path) {
-  return `${API_BASE_URL}${path}`;
+  return `${getApiBaseUrl()}${path}`;
 }
 
 async function apiFetch(path, options) {
@@ -60,6 +68,57 @@ export default function App() {
   const [historyModal, setHistoryModal] = useState(null);       // Vehicle ID or list
   const [registryModal, setRegistryModal] = useState(null);     // Plate or record
   const [alertFilter, setAlertFilter] = useState({ severity: '', type: '' });
+
+  // Backend Connection Settings
+  const [currentBackendUrl, setCurrentBackendUrl] = useState(() => getApiBaseUrl());
+  const [showBackendConfigModal, setShowBackendConfigModal] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState(() => getApiBaseUrl() || 'https://ivacs-vtrace-backend.onrender.com');
+  const [testResult, setTestResult] = useState(null);
+  const [isTestingUrl, setIsTestingUrl] = useState(false);
+
+  const saveBackendUrl = (newUrl) => {
+    const clean = (newUrl || '').trim().replace(/\/$/, '');
+    if (clean) {
+      localStorage.setItem('vtrace_backend_url', clean);
+    } else {
+      localStorage.removeItem('vtrace_backend_url');
+    }
+    setCurrentBackendUrl(clean);
+    setTestResult({ success: true, message: 'Backend URL updated! Testing connection...' });
+    setTimeout(() => {
+      fetchHealth();
+      fetchDashboardData();
+    }, 300);
+  };
+
+  const testBackendConnection = async (targetUrl) => {
+    setIsTestingUrl(true);
+    setTestResult(null);
+    const clean = (targetUrl || '').trim().replace(/\/$/, '');
+    const urlToTest = clean ? `${clean}/api/health` : '/api/health';
+    try {
+      const res = await fetch(urlToTest);
+      if (res.ok) {
+        const data = await res.json();
+        setTestResult({
+          success: true,
+          message: `Connected successfully! Device: ${data.runtime_device || 'CPU'}, Status: ${data.status}`
+        });
+      } else {
+        setTestResult({
+          success: false,
+          message: `Server returned HTTP ${res.status} ${res.statusText}`
+        });
+      }
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: `Connection failed: ${err.message}. Make sure Render backend is active.`
+      });
+    } finally {
+      setIsTestingUrl(false);
+    }
+  };
 
   // ==================== LIVE INTERNET CAMERA STATE ====================
   const [youtubeUrl, setYoutubeUrl] = useState('https://www.youtube.com/watch?v=tmMrGbBOi1U');
@@ -326,6 +385,18 @@ export default function App() {
             <span>DEMO DATA</span>
           </div>
 
+          {/* Backend Settings link */}
+          <button
+            onClick={() => setShowBackendConfigModal(true)}
+            className={`px-3 py-1 rounded border text-xs font-mono transition flex items-center space-x-1 ${
+              health.status === 'healthy'
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                : 'bg-rose-900/40 hover:bg-rose-800/60 border-rose-700 text-rose-200 font-bold animate-pulse'
+            }`}
+          >
+            <span>⚡ Backend Server</span>
+          </button>
+
           {/* Quick Registry Catalog link */}
           <button
             onClick={() => openRegistryModal('TN01AB1234')}
@@ -338,6 +409,41 @@ export default function App() {
 
       {/* ==================== MAIN CONTENT CONTAINER ==================== */}
       <main className="flex-1 p-5 max-w-[1700px] w-full mx-auto space-y-5">
+
+        {/* OFFLINE BACKEND CONNECTION WARNING BANNER */}
+        {health.status !== 'healthy' && (
+          <div className="bg-rose-950/80 border border-rose-800/80 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></div>
+              <div>
+                <h4 className="font-mono font-bold text-rose-200 text-sm">BACKEND OFFLINE / DISCONNECTED</h4>
+                <p className="text-xs text-rose-300/80">
+                  Vercel static frontend is not connected to FastAPI backend. Set backend server URL below or connect to your Render service.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                onClick={() => saveBackendUrl('https://ivacs-vtrace-backend.onrender.com')}
+                className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-semibold transition"
+              >
+                Render Backend
+              </button>
+              <button
+                onClick={() => saveBackendUrl('http://localhost:8000')}
+                className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs transition border border-slate-700"
+              >
+                Local Server (8000)
+              </button>
+              <button
+                onClick={() => setShowBackendConfigModal(true)}
+                className="px-3 py-1.5 rounded bg-rose-800 hover:bg-rose-700 text-rose-100 font-mono text-xs font-semibold transition"
+              >
+                Custom URL
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* ==================== 1. TOP KPI TELEMETRY CARDS ==================== */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
@@ -1195,6 +1301,125 @@ export default function App() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== BACKEND CONFIGURATION MODAL ==================== */}
+      {showBackendConfigModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl">
+            <div className="px-6 py-4 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  DEPLOYMENT SETTINGS
+                </span>
+                <h3 className="text-sm font-mono font-bold text-white mt-1">
+                  ⚡ FASTAPI BACKEND SERVER CONNECTION
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowBackendConfigModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 flex items-center justify-center font-bold text-lg transition"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs font-mono">
+              <p className="text-slate-300 leading-relaxed">
+                Vercel hosts the React Command Center UI. Enter your deployed Render FastAPI backend URL below to connect live telemetry, detection events, and OCR identity matching.
+              </p>
+
+              <div className="space-y-2">
+                <label className="text-slate-400 text-[11px] block">Current Configured API Base URL:</label>
+                <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-emerald-400 font-mono text-xs break-all">
+                  {currentBackendUrl || '(Default Relative / Proxy)'}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-slate-400 text-[11px] block">Enter Backend Server URL:</label>
+                <input
+                  type="text"
+                  value={customUrlInput}
+                  onChange={(e) => setCustomUrlInput(e.target.value)}
+                  placeholder="https://ivacs-vtrace-backend.onrender.com or http://localhost:8000"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Preset Quick Buttons */}
+              <div className="space-y-1.5">
+                <span className="text-slate-500 text-[10px]">QUICK PRESETS:</span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      setCustomUrlInput('https://ivacs-vtrace-backend.onrender.com');
+                      testBackendConnection('https://ivacs-vtrace-backend.onrender.com');
+                    }}
+                    className="px-2.5 py-1 rounded bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700 text-blue-200 text-[11px]"
+                  >
+                    Render Server (https://ivacs-vtrace-backend.onrender.com)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCustomUrlInput('http://localhost:8000');
+                      testBackendConnection('http://localhost:8000');
+                    }}
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px]"
+                  >
+                    Local Host (http://localhost:8000)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCustomUrlInput('');
+                      saveBackendUrl('');
+                    }}
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 text-[11px]"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
+              </div>
+
+              {/* Test Result Message */}
+              {testResult && (
+                <div className={`p-3 rounded-lg border text-xs font-mono ${
+                  testResult.success ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300' : 'bg-rose-950/60 border-rose-800 text-rose-300'
+                }`}>
+                  {testResult.message}
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-between border-t border-slate-800">
+                <button
+                  onClick={() => testBackendConnection(customUrlInput)}
+                  disabled={isTestingUrl}
+                  className="px-3.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-mono text-xs transition disabled:opacity-50"
+                >
+                  {isTestingUrl ? 'Testing...' : '⚡ Test Connection'}
+                </button>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowBackendConfigModal(false)}
+                    className="px-3.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 font-mono text-xs transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      saveBackendUrl(customUrlInput);
+                      setShowBackendConfigModal(false);
+                    }}
+                    className="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-bold transition shadow-lg"
+                  >
+                    Save & Apply
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
