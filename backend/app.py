@@ -276,9 +276,11 @@ if SCENARIOS_DIR.exists():
     app.mount("/scenarios", StaticFiles(directory=str(SCENARIOS_DIR)), name="scenarios")
 
 
-# 1. Health Endpoint
+# 1. Health Endpoint (Supports both /health and /api/health)
+@app.get("/health", response_model=HealthResponse)
 @app.get("/api/health", response_model=HealthResponse)
 def health_check():
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return HealthResponse(
         status="healthy",
