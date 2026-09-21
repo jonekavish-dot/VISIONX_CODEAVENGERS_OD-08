@@ -3,11 +3,11 @@
 **Project:** IVACS V-TRACE (Vehicle Trust, Route & Evidence Engine)  
 **Problem Statement:** OD-08 — License Plate Detection and Recognition from Construction-Site CCTV Footage  
 **Date:** 2026-09-21  
-**Total Tests:** **46**  
-**Passed:** **46**  
+**Total Tests:** **49**  
+**Passed:** **49**  
 **Failed:** **0**  
 **Pass Rate:** **100%**  
-**Test Suite Execution Time:** **40.05s**  
+**Test Suite Execution Time:** **44.60s**  
 **Test Execution Command:** `python -m pytest tests/ -v`
 
 ---
@@ -22,7 +22,8 @@
 | [`tests/test_final_mvp.py`](file:///d:/VISIONX/tests/test_final_mvp.py) | Registry abstraction, permits, route integrity, alert engine, 10s cooldown, trust snapshot | **15** | **PASS** |
 | [`tests/test_youtube_source.py`](file:///d:/VISIONX/tests/test_youtube_source.py) | YouTube live video stream ingestion via yt-dlp, error handling, background manager, REST API endpoints | **5** | **PASS** |
 | [`tests/test_plate_accuracy_enhanced.py`](file:///d:/VISIONX/tests/test_plate_accuracy_enhanced.py) | Positional slot disambiguation repair, multi-variant binarization, HSRP strip crop, noise filtering | **4** | **PASS** |
-| **Total Automated Tests** | **Complete Full-Stack & ML Pipeline** | **46** | **100% PASS** |
+| [`tests/test_history_and_multi_vehicle.py`](file:///d:/VISIONX/tests/test_history_and_multi_vehicle.py) | Structured history timeline, undetected vehicle Re-ID recovery engine, Hikvision multi-vehicle detection | **3** | **PASS** |
+| **Total Automated Tests** | **Complete Full-Stack & ML Pipeline** | **49** | **100% PASS** |
 
 ---
 

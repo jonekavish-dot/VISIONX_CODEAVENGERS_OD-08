@@ -62,6 +62,8 @@ class VehicleDetector:
                 frame,
                 classes=target_class_ids,
                 conf=self.conf_thresh,
+                iou=0.45,
+                max_det=30,
                 verbose=False,
                 device=self.device
             )
@@ -97,6 +99,11 @@ class VehicleDetector:
                     "frame_number": frame_number,
                     "timestamp": timestamp_str
                 })
+
+            # Spatial sort left-to-right for multi-vehicle lane consistency
+            detections.sort(key=lambda d: d["vehicle_bbox"][0])
+            for idx, det in enumerate(detections, start=1):
+                det["vehicle_index"] = idx
 
         except Exception as e:
             logger.error(f"Error during vehicle detection on frame {frame_number}: {e}")

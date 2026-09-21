@@ -13,6 +13,7 @@ class ProcessingStatus(str, Enum):
     NO_VEHICLE = "NO_VEHICLE"
     NO_PLATE = "NO_PLATE"
     PLATE_UNREADABLE = "PLATE_UNREADABLE"
+    UNDETECTED_PLATE_RECOVERED = "UNDETECTED_PLATE_RECOVERED"
     ERROR = "ERROR"
 
 class DetectionEvent(BaseModel):

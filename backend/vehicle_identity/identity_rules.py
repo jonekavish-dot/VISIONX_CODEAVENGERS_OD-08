@@ -40,7 +40,7 @@ def evaluate_identity_decision(
         if visual_similarity >= high_threshold:
             return (
                 IdentityEventType.PLATE_UNREADABLE_VEHICLE_MATCH,
-                f"Plate unreadable or uncertain, but visual appearance matches known vehicle identity ({visual_similarity:.2f} similarity)."
+                f"UNDETECTED_PLATE_RECOVERED_VIA_VISUAL_REID: License plate obscured or unreadable, but 512-D deep visual fingerprint matched registered vehicle identity {clean_cand or 'known vehicle'} ({visual_similarity:.2f} similarity)."
             )
         else:
             return (

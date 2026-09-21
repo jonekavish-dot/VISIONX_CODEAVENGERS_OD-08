@@ -52,7 +52,8 @@ from backend.database.database import (
     reset_demo_registry_data,
     get_all_permits,
     get_permits_for_plate,
-    get_latest_observations_by_camera
+    get_latest_observations_by_camera,
+    get_vehicle_history_timeline
 )
 from backend.vehicle_identity.schemas import (
     VehicleIdentity,
@@ -344,10 +345,25 @@ def get_vehicle(vehicle_id: str):
     return identity
 
 # 10. Vehicle Observation History Endpoint
-@app.get("/api/vehicles/{vehicle_id}/history", response_model=List[IdentityObservation])
+@app.get("/api/vehicles/{vehicle_id}/history")
 def get_vehicle_history(vehicle_id: str):
     observations = get_identity_observations_for_vehicle(vehicle_id)
     return observations
+
+# 10b. Enhanced Vehicle Sighting Timeline Endpoint
+@app.get("/api/vehicles/{vehicle_id}/timeline")
+def get_vehicle_timeline(vehicle_id: str):
+    timeline = get_vehicle_history_timeline(vehicle_id)
+    if not timeline:
+        # If no identity_observations found, check if vehicle identity exists
+        identity = get_vehicle_identity_by_id(vehicle_id)
+        if not identity:
+            raise HTTPException(status_code=404, detail=f"Vehicle identity '{vehicle_id}' not found.")
+    return {
+        "vehicle_id": vehicle_id,
+        "total_sightings": len(timeline),
+        "timeline": timeline
+    }
 
 # 11. Identity Events List Endpoint
 @app.get("/api/identity-events", response_model=IdentityObservationListResponse)

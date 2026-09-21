@@ -1048,3 +1048,79 @@ def get_latest_observations_by_camera() -> Dict[str, Any]:
     conn.close()
     return results
 
+
+def get_vehicle_history_timeline(vehicle_id: str) -> List[Dict[str, Any]]:
+    """
+    Retrieves an ordered, structured historical timeline for a vehicle.
+    Calculates dwell times between visits, detection recovery modes,
+    and returns complete evidence crop references.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 
+            io.id,
+            io.vehicle_identity_id,
+            io.observed_plate,
+            vi.canonical_plate,
+            vi.vehicle_class,
+            io.plate_confidence,
+            io.ocr_confidence,
+            io.visual_similarity,
+            io.event_type,
+            io.camera_id,
+            io.zone,
+            io.timestamp,
+            io.frame_number,
+            io.vehicle_crop_path,
+            io.plate_crop_path,
+            io.frame_path,
+            io.previous_crop_path,
+            io.is_demo
+        FROM identity_observations io
+        LEFT JOIN vehicle_identities vi ON io.vehicle_identity_id = vi.vehicle_id
+        WHERE io.vehicle_identity_id = ?
+        ORDER BY io.id ASC
+    """, (vehicle_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    timeline = []
+    prev_dt = None
+
+    for row in rows:
+        d = dict(row)
+        ts_str = d.get("timestamp")
+        dwell_seconds = None
+        if ts_str:
+            try:
+                current_dt = datetime.fromisoformat(ts_str)
+                if prev_dt:
+                    dwell_seconds = int((current_dt - prev_dt).total_seconds())
+                prev_dt = current_dt
+            except Exception:
+                pass
+
+        obs_plate = d.get("observed_plate")
+        event_type = d.get("event_type")
+
+        # Determine recovery mode for undetected plates
+        if not obs_plate and event_type == "PLATE_UNREADABLE_VEHICLE_MATCH":
+            recovery_mode = "UNDETECTED_PLATE_RECOVERED_VIA_VISUAL_REID"
+            display_plate = d.get("canonical_plate") or "UNDETECTED"
+        elif not obs_plate:
+            recovery_mode = "PLATE_UNREADABLE"
+            display_plate = "UNDETECTED"
+        else:
+            recovery_mode = "STANDARD_PLATE_DETECTION"
+            display_plate = obs_plate
+
+        d["dwell_seconds"] = dwell_seconds
+        d["recovery_mode"] = recovery_mode
+        d["display_plate"] = display_plate
+        timeline.append(d)
+
+    return timeline
+

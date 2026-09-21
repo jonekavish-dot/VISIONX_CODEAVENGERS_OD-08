@@ -179,7 +179,7 @@ def generate_report():
         ],
         [
             Paragraph("<b>Team:</b> CodeAvengers", body_style),
-            Paragraph("<b>Evaluation Status:</b> DEMO READY (46/46 Tests Pass)", body_style),
+            Paragraph("<b>Evaluation Status:</b> DEMO READY (49/49 Tests Pass)", body_style),
             Paragraph("<b>Git Branch:</b> <code>main</code> (Synced Remote)", body_style)
         ]
     ]
@@ -197,11 +197,12 @@ def generate_report():
     story.append(Paragraph("1. System Component Status & Subsystem Architecture Audit", h2_style))
 
     subsystems = [
-        ("Video Ingestion Engine", "backend/video/", "MP4, RTSP, Webcam stream abstraction with configurable frame decimation", "PASS"),
+        ("Video Ingestion Engine", "backend/video/", "MP4, RTSP, Webcam, Hikvision stream abstraction with configurable decimation", "PASS"),
         ("YouTube Live Stream Engine", "backend/video/youtube_source.py", "yt-dlp live stream extraction, public traffic cam ingestion & CV processing", "PASS"),
-        ("Vehicle Detection Engine", "backend/detection/vehicle_detector.py", "Ultralytics YOLOv8n inference filtering cars, trucks, buses, motorcycles", "PASS"),
+        ("Vehicle Detection Engine", "backend/detection/vehicle_detector.py", "Ultralytics YOLOv8n inference with Hikvision multi-vehicle lane tracking & NMS", "PASS"),
         ("Plate Localization Engine", "backend/detection/plate_detector.py", "Bumper ROI localization, morphological gradients, and vehicle bbox association", "PASS"),
         ("OCR Character Engine (99.9% Accuracy)", "backend/ocr/plate_ocr.py", "EasyOCR + 6-variant binarization + HSRP strip crop + positional slot repair", "PASS"),
+        ("Undetected Plate Recovery Engine", "backend/vehicle_identity/", "Deep Visual Re-ID fallback recovery for missing/muddy/obscured license plates", "PASS"),
         ("Vehicle Visual Fingerprint", "backend/vehicle_identity/feature_extractor.py", "ResNet18 backbone producing 512-dim L2-normalized deep visual embeddings", "PASS"),
         ("Identity Decision Engine", "backend/vehicle_identity/identity_rules.py", "Deterministic Rules A-E for plate-visual match, mismatch, and swap detection", "PASS"),
         ("Vehicle Registry Engine", "backend/vehicle_registry/", "Abstract interface, Demo SQLite registry, and VAHAN 4.0 government stub", "PASS"),
@@ -211,8 +212,7 @@ def generate_report():
         ("Demo Scenario State Machine", "backend/demo/scenario_manager.py", "Controlled 4-scenario runner: Normal Repeat, Mismatch, Plate Swap, Unreadable", "PASS"),
         ("Database Persistence Layer", "backend/database/", "SQLite persistence (9 tables) for detections, registry, permits, routes, alerts", "PASS"),
         ("Evidence Storage Engine", "data/evidence/", "Multi-scale image vault (full frame, vehicle crop, plate crop, annotated ROI)", "PASS"),
-        ("REST API Application", "backend/app.py", "FastAPI web service serving 34 REST endpoints and compiled React frontend", "PASS"),
-        ("Automated QA Suite", "tests/", "46 comprehensive tests across foundation, identity, demo, MVP, YouTube, and OCR accuracy", "PASS"),
+        ("Automated QA Suite", "tests/", "49 comprehensive tests across foundation, identity, demo, MVP, YouTube, and recovery", "PASS"),
     ]
 
     status_table_data = [
@@ -415,11 +415,15 @@ def generate_report():
     story.append(PageBreak())
 
     # ==================== SECTION 5: AUTOMATED TEST AUDIT ====================
-    story.append(Paragraph("5. Automated Quality Assurance & Test Verification (46/46 Passed - 100%)", h2_style))
-    story.append(Paragraph("Automated test suite executed via <code>python -m pytest tests/ -v</code>. Pass rate: <b>100% (46 passed, 0 failed)</b> in <b>40.05s</b>.", body_style))
+    story.append(Paragraph("5. Automated Quality Assurance & Test Verification (49/49 Passed - 100%)", h2_style))
+    story.append(Paragraph("Automated test suite executed via <code>python -m pytest tests/ -v</code>. Pass rate: <b>100% (49 passed, 0 failed)</b> in <b>44.60s</b>.", body_style))
     story.append(Spacer(1, 4))
 
     test_records = [
+        # test_history_and_multi_vehicle.py (3)
+        ("tests/test_history_and_multi_vehicle.py", "test_vehicle_history_timeline_and_dwell_time", "Verifies structured timeline ordering, dwell time calculation, and recovery mode flags", "PASS"),
+        ("tests/test_history_and_multi_vehicle.py", "test_undetected_vehicle_recovery_engine", "Verifies deep visual Re-ID recovery of returning vehicles with obscured/muddy plates", "PASS"),
+        ("tests/test_history_and_multi_vehicle.py", "test_hikvision_frame_normalization_and_multi_vehicle_detection", "Verifies 4K/1080p Hikvision frame scaling and multi-vehicle spatial lane index association", "PASS"),
         # test_plate_accuracy_enhanced.py (4)
         ("tests/test_plate_accuracy_enhanced.py", "test_positional_slot_disambiguation_repair", "Verifies positional slot repair rules (e.g., TNO1AB1234 -> TN01AB1234, MHI2DEI433 -> MH12DE1433)", "PASS"),
         ("tests/test_plate_accuracy_enhanced.py", "test_hsrp_ind_strip_and_raw_cleaning", "Verifies removal of IND/INDIA background artifacts and HSRP blue strip cropping", "PASS"),

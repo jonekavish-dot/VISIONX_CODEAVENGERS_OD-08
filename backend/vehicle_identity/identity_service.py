@@ -228,6 +228,7 @@ class VehicleIdentityService:
             insert_identity_observation(obs, is_demo=is_demo)
 
         is_matched = (event_type in [IdentityEventType.SAME_VEHICLE, IdentityEventType.PLATE_UNREADABLE_VEHICLE_MATCH])
+        ret_canonical_plate = clean_plate or (active_candidate.canonical_plate if active_candidate else None)
 
         return IdentityMatchResult(
             vehicle_id=assigned_vehicle_id,
@@ -235,7 +236,7 @@ class VehicleIdentityService:
             matched=is_matched,
             event_type=event_type,
             previous_crop_path=prev_crop_path,
-            canonical_plate=clean_plate,
+            canonical_plate=ret_canonical_plate,
             details=details if not is_duplicate else f"{details} (Duplicate observation suppressed)",
             is_duplicate=is_duplicate
         )

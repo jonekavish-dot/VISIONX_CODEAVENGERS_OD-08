@@ -37,6 +37,18 @@ class FrameProcessor:
         self.identity_service = identity_service or VehicleIdentityService()
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def normalize_hikvision_frame(frame: np.ndarray, max_dim: int = 1920) -> np.ndarray:
+        """Optimizes high-resolution 4K/1080p Hikvision DVR/NVR frames for multi-vehicle CV processing."""
+        if frame is None or frame.size == 0:
+            return frame
+        h, w = frame.shape[:2]
+        if max(h, w) > max_dim:
+            scale = max_dim / float(max(h, w))
+            new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+            return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        return frame
+
     def process_frame(
         self,
         frame: np.ndarray,
@@ -66,6 +78,7 @@ class FrameProcessor:
             )
             return [dummy_event], np.zeros((100, 100, 3), dtype=np.uint8)
 
+        frame = self.normalize_hikvision_frame(frame)
         annotated_frame = frame.copy()
         events: List[DetectionEvent] = []
 
@@ -177,45 +190,7 @@ class FrameProcessor:
                 # 3. OCR EXTRACTION
                 ocr_res = self.ocr_engine.recognize(plate_crop)
                 raw_plate = ocr_res["raw_text"]
-                norm_plate = ocr_res["normalized_text"]
-                ocr_conf = ocr_res["ocr_confidence"]
-
-                # Determine status
-                if not raw_plate:
-                    status = ProcessingStatus.PLATE_UNREADABLE
-                else:
-                    status = ProcessingStatus.DETECTED
-
-                # 4. DRAW OVERLAYS
-                self._draw_vehicle_box(annotated_frame, vx1, vy1, vx2, vy2, v_class, v_conf)
-                display_text = norm_plate or raw_plate or "PLATE"
-                self._draw_plate_box(annotated_frame, px1, py1, px2, py2, display_text, ocr_conf)
-
-                # 5. EVIDENCE STORAGE
-                vehicle_crop_path = None
-                plate_crop_path = None
-                frame_path = None
-                annotated_path = None
-
-                if save_evidence and status in [ProcessingStatus.DETECTED, ProcessingStatus.PLATE_UNREADABLE]:
-                    prefix = f"{camera_id}_{timestamp_slug}_f{frame_number}_v{v_idx}"
-                    
-                    frame_path = str(EVIDENCE_DIR / f"{prefix}_frame.jpg")
-                    vehicle_crop_path = str(EVIDENCE_DIR / f"{prefix}_vehicle.jpg")
-                    plate_crop_path = str(EVIDENCE_DIR / f"{prefix}_plate.jpg")
-                    annotated_path = str(EVIDENCE_DIR / f"{prefix}_annotated.jpg")
-
-                    try:
-                        cv2.imwrite(frame_path, frame)
-                        if vehicle_crop.size > 0:
-                            cv2.imwrite(vehicle_crop_path, vehicle_crop)
-                        if plate_crop.size > 0:
-                            cv2.imwrite(plate_crop_path, plate_crop)
-                        cv2.imwrite(annotated_path, annotated_frame)
-                    except Exception as err:
-                        logger.error(f"Failed to save evidence images: {err}")
-
-                # 6. VEHICLE VISUAL FINGERPRINT & IDENTITY MATCHING
+                # 6. VEHICLE VISUAL FINGERPRINT & IDENTITY MATCHING (Deep Re-ID Engine)
                 id_result = None
                 if self.identity_service and vehicle_crop.size > 0:
                     try:
@@ -241,6 +216,47 @@ class FrameProcessor:
                 v_evt = id_result.event_type.value if id_result else None
                 v_match = "MATCHED" if (id_result and id_result.matched) else ("UNMATCHED" if id_result else None)
 
+                # Undetected Vehicle Recovery Logic:
+                # If plate was unreadable/missing, but visual embedding matched a registered vehicle identity (Rule D),
+                # recover the identity and attach the canonical plate.
+                final_plate = norm_plate
+                if id_result and id_result.event_type == "PLATE_UNREADABLE_VEHICLE_MATCH":
+                    status = ProcessingStatus.UNDETECTED_PLATE_RECOVERED
+                    final_plate = id_result.canonical_plate or norm_plate
+
+                # 4. DRAW OVERLAYS FOR MULTI-VEHICLE HIKVISION FEEDS
+                v_index = vehicle.get("vehicle_index", v_idx + 1)
+                self._draw_vehicle_box(annotated_frame, vx1, vy1, vx2, vy2, f"#{v_index} {v_class}", v_conf)
+                if status == ProcessingStatus.UNDETECTED_PLATE_RECOVERED:
+                    display_text = f"[RECOVERED VIA RE-ID] {final_plate or 'VEHICLE'}"
+                else:
+                    display_text = norm_plate or raw_plate or "PLATE"
+                self._draw_plate_box(annotated_frame, px1, py1, px2, py2, display_text, ocr_conf)
+
+                # 5. EVIDENCE STORAGE
+                vehicle_crop_path = None
+                plate_crop_path = None
+                frame_path = None
+                annotated_path = None
+
+                if save_evidence and status in [ProcessingStatus.DETECTED, ProcessingStatus.PLATE_UNREADABLE, ProcessingStatus.UNDETECTED_PLATE_RECOVERED]:
+                    prefix = f"{camera_id}_{timestamp_slug}_f{frame_number}_v{v_idx}"
+                    
+                    frame_path = str(EVIDENCE_DIR / f"{prefix}_frame.jpg")
+                    vehicle_crop_path = str(EVIDENCE_DIR / f"{prefix}_vehicle.jpg")
+                    plate_crop_path = str(EVIDENCE_DIR / f"{prefix}_plate.jpg")
+                    annotated_path = str(EVIDENCE_DIR / f"{prefix}_annotated.jpg")
+
+                    try:
+                        cv2.imwrite(frame_path, frame)
+                        if vehicle_crop.size > 0:
+                            cv2.imwrite(vehicle_crop_path, vehicle_crop)
+                        if plate_crop.size > 0:
+                            cv2.imwrite(plate_crop_path, plate_crop)
+                        cv2.imwrite(annotated_path, annotated_frame)
+                    except Exception as err:
+                        logger.error(f"Failed to save evidence images: {err}")
+
                 # 7. STRUCTURED DETECTION EVENT
                 event = DetectionEvent(
                     camera_id=camera_id,
@@ -251,7 +267,7 @@ class FrameProcessor:
                     vehicle_class=v_class,
                     vehicle_confidence=v_conf,
                     vehicle_bbox=[vx1, vy1, vx2, vy2],
-                    plate=norm_plate,
+                    plate=final_plate,
                     raw_plate=raw_plate,
                     plate_confidence=plate_conf,
                     ocr_confidence=ocr_conf,
@@ -277,7 +293,7 @@ class FrameProcessor:
 
             self._draw_overlay_header(
                 annotated_frame, camera_id, zone, frame_number,
-                f"VEHICLES: {len(vehicles)} | DETECTIONS: {sum(1 for e in events if e.status == ProcessingStatus.DETECTED)}"
+                f"MULTI-VEHICLES: {len(vehicles)} | DETECTED: {sum(1 for e in events if e.status in [ProcessingStatus.DETECTED, ProcessingStatus.UNDETECTED_PLATE_RECOVERED])}"
             )
 
         except Exception as ex:
